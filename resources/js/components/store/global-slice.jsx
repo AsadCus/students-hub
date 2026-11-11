@@ -16,6 +16,9 @@ import {
     SUPPORT_STRATEGY_STATE,
     QUESTION_STATE,
     BLOCKED_DATE_STATE,
+    CCA_STATE,
+    EQUIPMENT_STATE,
+    EQUIPMENT_LOAN_STATE,
 } from "./state";
 import { stateKey } from "../utils/constants";
 
@@ -35,6 +38,9 @@ const INITIAL_STATE = {
     [stateKey.support_strategies]: SUPPORT_STRATEGY_STATE,
     [stateKey.questions]: QUESTION_STATE,
     [stateKey.blocked_dates]: BLOCKED_DATE_STATE,
+    [stateKey.ccas]: CCA_STATE,
+    [stateKey.equipment]: EQUIPMENT_STATE,
+    [stateKey.equipment_loans]: EQUIPMENT_LOAN_STATE,
 };
 
 const isPlainObject = (v) =>

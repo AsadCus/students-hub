@@ -51,12 +51,18 @@ const CustomDataTable = ({
     onEditStudent = () => {},
     onDeleteStudent = () => {},
     onEditSubFacility = () => {},
+    onReject = () => {},
+    onReturn = () => {},
+    onAddEquipment = () => {},
+    onEditEquipment = () => {},
+    onDeleteEquipment = () => {},
+    equipment = [],
     timeFilter,
-    setTimeFilter,
+    setTimeFilter = () => {},
     dateFilter,
-    setDateFilter,
+    setDateFilter = () => {},
     rangeFilter,
-    setRangeFilter,
+    setRangeFilter = () => {},
     questions = [],
     classes = [],
     students = [],
@@ -95,7 +101,9 @@ const CustomDataTable = ({
         activity: { value: null },
         facility: { value: null },
         support_strategies: { value: null },
-        ...(type === "bookings" && { status: { value: null } }),
+        ...((type === "bookings" || type === "equipment_loans") && {
+            status: { value: null },
+        }),
     });
     const [filteredDataState, setFilteredDataState] = useState([]);
     const [expandedRows, setExpandedRows] = useState([]);
@@ -229,6 +237,36 @@ const CustomDataTable = ({
         });
     };
 
+    const handleReject = (event, id) => {
+        confirmPopup({
+            target: event.currentTarget,
+            message: `Do you want to reject this loan request?`,
+            icon: "pi pi-info-circle",
+            acceptClassName: "p-button-danger",
+            accept: () => onReject(id),
+        });
+    };
+
+    const handleReturn = (event, id) => {
+        confirmPopup({
+            target: event.currentTarget,
+            message: `Mark this loan as returned?`,
+            icon: "pi pi-info-circle",
+            acceptClassName: "p-button-success",
+            accept: () => onReturn(id),
+        });
+    };
+
+    const handleEquipmentDelete = (event, id) => {
+        confirmPopup({
+            target: event.currentTarget,
+            message: `Do you want to delete this equipment?`,
+            icon: "pi pi-info-circle",
+            acceptClassName: "p-button-danger",
+            accept: () => onDeleteEquipment(id),
+        });
+    };
+
     const handleClassDelete = (event, id) => {
         confirmPopup({
             target: event.currentTarget,
@@ -253,10 +291,14 @@ const CustomDataTable = ({
         });
     };
 
+    const recordNoun = type === "equipment_loans" ? "loan" : "booking";
+
     const handleConfirm = (event, id) => {
         confirmPopup({
             target: event.currentTarget,
-            message: `Do you want to confirm this booking?`,
+            message: `Do you want to ${
+                type === "equipment_loans" ? "approve" : "confirm"
+            } this ${recordNoun}?`,
             icon: "pi pi-info-circle",
             acceptClassName: "p-button-success",
             accept: () => {
@@ -268,7 +310,7 @@ const CustomDataTable = ({
     const handleCancel = (event, id) => {
         confirmPopup({
             target: event.currentTarget,
-            message: `Do you want to cancel this booking?`,
+            message: `Do you want to cancel this ${recordNoun}?`,
             icon: "pi pi-info-circle",
             acceptClassName: "p-button-danger",
             accept: () => {
@@ -739,6 +781,7 @@ const CustomDataTable = ({
                 )}
                 {(type === "checkin" ||
                     type === "bookings" ||
+                    type === "equipment_loans" ||
                     type === "counsels") && (
                     <>
                         {/* <Dropdown
@@ -901,7 +944,62 @@ const CustomDataTable = ({
                       },
                   ]
                 : []),
+            ...(type === "ccas" && permissions.includes("equipment create")
+                ? [
+                      {
+                          label: "Add Equipment",
+                          icon: "pi pi-plus",
+                          command: () => onAddEquipment(rowData[identifier]),
+                      },
+                  ]
+                : []),
         ];
+
+        if (type === "equipment_loans") {
+            // "overdue" is a reserved loan past its end date.
+            const status =
+                rowData.status === "overdue" ? "reserved" : rowData.status;
+            const canConfirm = permissions.includes("equipment_loans confirm");
+            const id = rowData[identifier];
+            // Edit only makes sense while the loan still holds stock.
+            if (status !== "requested" && status !== "reserved") {
+                const editIndex = actions.findIndex((a) => a.label === "Edit");
+                if (editIndex !== -1) actions.splice(editIndex, 1);
+            }
+            if (canConfirm && status === "requested") {
+                actions.push(
+                    {
+                        label: "Approve",
+                        icon: "pi pi-check",
+                        command: (event) => handleConfirm(event.originalEvent, id),
+                    },
+                    {
+                        label: "Reject",
+                        icon: "pi pi-ban",
+                        command: (event) => handleReject(event.originalEvent, id),
+                    }
+                );
+            }
+            if (canConfirm && status === "reserved") {
+                actions.push({
+                    label: "Mark returned",
+                    icon: "pi pi-replay",
+                    command: (event) => handleReturn(event.originalEvent, id),
+                });
+            }
+            if (
+                canEdit &&
+                (status === "requested" ||
+                    (status === "reserved" &&
+                        rowData.start_date > DateTime.now().toISODate()))
+            ) {
+                actions.push({
+                    label: "Cancel",
+                    icon: "pi pi-times",
+                    command: (event) => handleCancel(event.originalEvent, id),
+                });
+            }
+        }
 
         if (type === "bookings") {
             if (rowData.status === "requested") {
@@ -1066,6 +1164,45 @@ const CustomDataTable = ({
                 outlined
             />
         );
+    };
+
+    const equipmentActionsTemplate = (rowData) => {
+        const permissions = auth()?.permissions || [];
+        const actions = [
+            ...(permissions.includes("equipment edit")
+                ? [
+                      {
+                          label: "Edit",
+                          icon: "pi pi-pencil",
+                          command: () => onEditEquipment(rowData.id),
+                      },
+                  ]
+                : []),
+            ...(permissions.includes("equipment delete")
+                ? [
+                      {
+                          label: "Delete",
+                          icon: "pi pi-trash",
+                          command: (event) =>
+                              handleEquipmentDelete(
+                                  event.originalEvent,
+                                  rowData.id
+                              ),
+                      },
+                  ]
+                : []),
+        ];
+
+        return actions.length > 0 ? (
+            <SplitButton
+                label=""
+                size={size}
+                icon="pi pi-search"
+                dropdownIcon="pi pi-cog"
+                model={actions}
+                outlined
+            />
+        ) : null;
     };
 
     const subFacilityActionsTemplate = (rowData) => {
@@ -1363,6 +1500,42 @@ const CustomDataTable = ({
                 </div>
             );
         }
+        if (type === "ccas") {
+            const listEquipment = equipment.filter((e) => e.cca_id === data.id);
+
+            return (
+                <div className="p-3">
+                    <DataTable
+                        value={listEquipment}
+                        size={size}
+                        dataKey="id"
+                        tableStyle={{ minWidth: "50rem" }}
+                        emptyMessage="No equipment in this CCA yet."
+                    >
+                        <Column
+                            header="#"
+                            body={indexTemplate}
+                            style={{ width: "3rem" }}
+                            exportable={false}
+                        />
+                        <Column field="name" header="Equipment" sortable />
+                        <Column field="code" header="Code" sortable />
+                        <Column field="quantity" header="Quantity" sortable />
+                        <Column
+                            field="active"
+                            header="Available"
+                            body={(row) => (
+                                <Badge
+                                    value={row.active ? "Yes" : "No"}
+                                    severity={row.active ? "success" : "secondary"}
+                                />
+                            )}
+                        />
+                        <Column header="Actions" body={equipmentActionsTemplate} />
+                    </DataTable>
+                </div>
+            );
+        }
         if (type === "facilities") {
             const listSubFacilites = Array.isArray(subFacilities)
                 ? subFacilities.filter((q) => q.parent_id === data.id)
@@ -1484,6 +1657,24 @@ const CustomDataTable = ({
         );
     };
 
+    const loanStatusBodyTemplate = (rowData) => {
+        const severity = {
+            requested: "info",
+            reserved: "success",
+            overdue: "warning",
+            rejected: "danger",
+            cancelled: "secondary",
+            returned: "secondary",
+        }[rowData.status];
+
+        return (
+            <Badge
+                value={capitalize(rowData.status || "")}
+                severity={severity || "info"}
+            />
+        );
+    };
+
     const generateColumns = () => {
         if (!collection.length) return [];
 
@@ -1510,15 +1701,20 @@ const CustomDataTable = ({
         const dynamicColumns = properties.map((prop) => {
             const column = {
                 field: prop,
-                header: prop
-                    .split("_")
-                    .map((word) => capitalize(word))
-                    .join(" "),
+                header:
+                    prop === "cca"
+                        ? "CCA"
+                        : prop
+                              .split("_")
+                              .map((word) => capitalize(word))
+                              .join(" "),
                 sortable: true,
             };
 
             if (type === "bookings" && prop === "status") {
                 column.body = bookingStatusBodyTemplate;
+            } else if (type === "equipment_loans" && prop === "status") {
+                column.body = loanStatusBodyTemplate;
             } else if (prop === "created_at" || prop === "updated_at") {
                 column.body = (rowData) => formatDateToLocal(rowData[prop]);
             }
@@ -1533,6 +1729,14 @@ const CustomDataTable = ({
                 } else if (prop === "activity") {
                     column.filter = true;
                 }
+            } else if (type === "equipment_loans") {
+                column.filter = [
+                    "student",
+                    "class",
+                    "cca",
+                    "equipment",
+                    "status",
+                ].includes(prop);
             } else if (type === "bookings") {
                 if (prop === "student") {
                     column.filter = true;
@@ -1822,6 +2026,12 @@ CustomDataTable.propTypes = {
     onEditStudent: PropTypes.func,
     onDeleteStudent: PropTypes.func,
     onEditSubFacility: PropTypes.func,
+    onReject: PropTypes.func,
+    onReturn: PropTypes.func,
+    onAddEquipment: PropTypes.func,
+    onEditEquipment: PropTypes.func,
+    onDeleteEquipment: PropTypes.func,
+    equipment: PropTypes.array,
     timeFilter: PropTypes.string,
     setTimeFilter: PropTypes.func,
     dateFilter: PropTypes.object,
