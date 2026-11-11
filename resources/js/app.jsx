@@ -39,6 +39,8 @@ import FacilityReservations from "./components/masters/reports/FacilityReservati
 import Counsel from "./components/masters/reports/Counsel";
 import ManageSupportAndQuestions from "./components/masters/ManageSupportAndQuestions";
 import ManageLevelClassStudent from "./components/masters/ManageLevelClassStudent";
+import ManageEquipment from "./components/masters/ManageEquipment";
+import EquipmentLoans from "./components/masters/reports/EquipmentLoans";
 
 const PrivateRoute = ({ element, permission, loginRequired }) => {
     const auth = useAuthUser();
@@ -158,6 +160,16 @@ const AppWrapper = () => {
             path: "/counsels",
             element: <Counsel />,
             permission: "counsels view",
+        },
+        {
+            path: "/equipment",
+            element: <ManageEquipment />,
+            permission: "ccas view",
+        },
+        {
+            path: "/equipment-loans",
+            element: <EquipmentLoans />,
+            permission: "equipment_loans view",
         },
     ];
 

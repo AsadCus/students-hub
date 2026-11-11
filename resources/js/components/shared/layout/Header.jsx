@@ -101,6 +101,12 @@ const Header = () => {
                 command: () => navigate("/facilities"),
             });
         }
+        if (permissions.includes("ccas view")) {
+            masterSubItems.push({
+                label: "Equipment",
+                command: () => navigate("/equipment"),
+            });
+        }
         if (permissions.includes("questions view")) {
             masterSubItems.push({
                 label: "Form Ask Ms Vi",
@@ -133,6 +139,13 @@ const Header = () => {
             items.push({
                 label: "Facility Reservations",
                 command: () => navigate("/facility-reservations"),
+            });
+        }
+
+        if (permissions.includes("equipment_loans view")) {
+            items.push({
+                label: "Equipment Loans",
+                command: () => navigate("/equipment-loans"),
             });
         }
 
