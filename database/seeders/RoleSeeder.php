@@ -22,18 +22,24 @@ class RoleSeeder extends Seeder
             ['name' => 'Student', 'guard_name' => 'web'],
         ];
 
-        Role::insert($roles);
+        // Create roles idempotently
+        foreach ($roles as $roleData) {
+            Role::firstOrCreate([
+                'name' => $roleData['name'],
+                'guard_name' => $roleData['guard_name'],
+            ]);
+        }
 
         $masterTypes = config('constants.MASTER_TYPE_ARRAY');
 
         foreach ($masterTypes as $masterType) {
-            Permission::create(['name' => $masterType . ' view']);
-            Permission::create(['name' => $masterType . ' create']);
-            Permission::create(['name' => $masterType . ' edit']);
-            Permission::create(['name' => $masterType . ' delete']);
+            Permission::firstOrCreate(['name' => $masterType . ' view', 'guard_name' => 'web']);
+            Permission::firstOrCreate(['name' => $masterType . ' create', 'guard_name' => 'web']);
+            Permission::firstOrCreate(['name' => $masterType . ' edit', 'guard_name' => 'web']);
+            Permission::firstOrCreate(['name' => $masterType . ' delete', 'guard_name' => 'web']);
 
             if ($masterType == 'bookings') {
-                Permission::create(['name' => $masterType . ' confirm']);
+                Permission::firstOrCreate(['name' => $masterType . ' confirm', 'guard_name' => 'web']);
             }
 
             $superadminPermissions = [
@@ -48,11 +54,11 @@ class RoleSeeder extends Seeder
             Role::findByName('Superadmin')->givePermissionTo($superadminPermissions);
         }
 
-        Permission::create(['name' => 'dashboard view']);
-        Permission::create(['name' => 'dashboard-checkin view']);
-        Permission::create(['name' => 'dashboard-bookings view']);
-        Permission::create(['name' => 'dashboard-counsels view']);
-        Permission::create(['name' => 'settings toggle-login']);
+        Permission::firstOrCreate(['name' => 'dashboard view', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'dashboard-checkin view', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'dashboard-bookings view', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'dashboard-counsels view', 'guard_name' => 'web']);
+        Permission::firstOrCreate(['name' => 'settings toggle-login', 'guard_name' => 'web']);
 
         Role::findByName('Superadmin')->givePermissionTo([
             'dashboard view',
@@ -76,6 +82,14 @@ class RoleSeeder extends Seeder
             'facilities create',
             'facilities edit',
             'facilities delete',
+            'ccas view',
+            'ccas create',
+            'ccas edit',
+            'ccas delete',
+            'equipment view',
+            'equipment create',
+            'equipment edit',
+            'equipment delete',
             'bookings view',
             'bookings create',
             'bookings edit',

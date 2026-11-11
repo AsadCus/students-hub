@@ -19,6 +19,8 @@ class SupportStrategySeeder extends Seeder
             ['name' => 'Listening Ear']
         ];
 
-        SupportStrategy::insert($supportStrategies);
+        foreach ($supportStrategies as $strategy) {
+            SupportStrategy::firstOrCreate(['name' => $strategy['name']], $strategy);
+        }
     }
 }
