@@ -11,7 +11,12 @@ import {
     Navigate,
     useNavigate,
 } from "react-router-dom";
-import { AuthProvider, useAuthHeader, useAuthUser } from "react-auth-kit";
+import {
+    AuthProvider,
+    useAuthHeader,
+    useAuthUser,
+    useSignOut,
+} from "react-auth-kit";
 import { Provider, useSelector, useDispatch } from "react-redux";
 import { store } from "./components/store";
 import { setAuthToken } from "./components/api";
@@ -71,12 +76,24 @@ const AppWrapper = () => {
     const auth = useAuthUser();
     const [authReady, setAuthReady] = useState(false);
     const [loginRequired, setLoginRequired] = useState(false);
-    const { spinner, toastMessage } = useSelector(
+    const signOut = useSignOut();
+    const { spinner, toastMessage, sessionExpired } = useSelector(
         (state) => state.global[stateKey.app]
     );
     const dispatch = useDispatch();
     const toast = useRef(null);
     const navigate = useNavigate();
+
+    // Set by global-slice on any 401. Thunks can't use auth hooks, so the redirect lives here.
+    useEffect(() => {
+        if (!sessionExpired) return;
+        dispatch(setStateData({ key: "sessionExpired", data: false, isMerge: false }));
+        if (auth()) {
+            // ponytail: anonymous kiosk users only see the toast, no redirect
+            signOut();
+            navigate("/login");
+        }
+    }, [sessionExpired]);
 
     useEffect(() => {
         const eject = setAuthToken(authHeader);
