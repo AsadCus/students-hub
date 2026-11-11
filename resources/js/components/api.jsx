@@ -1,7 +1,8 @@
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: window.APP_URL || "http://localhost:8000",
+    // ponytail: SPA is served by Laravel itself, so the API is always same-origin
+    baseURL: window.location.origin,
     withCredentials: true,
 });
 
