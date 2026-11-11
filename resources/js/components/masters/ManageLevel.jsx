@@ -89,7 +89,7 @@ function ManageLevel() {
         setError("");
         try {
             if (mode === "create") {
-                const success = dispatch(
+                const success = await dispatch(
                     createRecord({
                         type: "levels",
                         endPoint: levelEndPoints.store,
@@ -102,7 +102,7 @@ function ManageLevel() {
                     myFetch();
                 }
             } else {
-                const success = dispatch(
+                const success = await dispatch(
                     updateRecord({
                         type: "levels",
                         endPoint: `${levelEndPoints.update}${editId}`,

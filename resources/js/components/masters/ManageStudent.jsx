@@ -102,7 +102,7 @@ function ManageStudent() {
         setError("");
         try {
             if (mode === "create") {
-                const success = dispatch(
+                const success = await dispatch(
                     createRecord({
                         type: "students",
                         endPoint: studentEndPoints.store,
@@ -118,7 +118,7 @@ function ManageStudent() {
                     myFetch();
                 }
             } else {
-                const success = dispatch(
+                const success = await dispatch(
                     updateRecord({
                         type: "students",
                         endPoint: `${studentEndPoints.update}${editId}`,
