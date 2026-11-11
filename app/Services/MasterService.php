@@ -238,7 +238,7 @@ class MasterService
                 ->get();
         }
         if ($type === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_LOAN_MASTER_TYPE')) {
-            return $q->with(['equipment.cca', 'student.class.level', 'user'])
+            return $q->with(['equipment.cca', 'student.class.level', 'user:id,name'])
                 ->when($request?->status === 'overdue', fn ($q) => $q
                     ->where('status', \App\Models\EquipmentLoan::RESERVED)
                     ->whereDate('end_date', '<', today()))

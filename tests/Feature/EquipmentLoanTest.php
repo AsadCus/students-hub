@@ -161,6 +161,19 @@ class EquipmentLoanTest extends TestCase
             ->assertJsonPath('result.0.is_overdue', true);
     }
 
+    public function test_loan_list_is_staff_only(): void
+    {
+        $this->loan('requested');
+
+        $this->getJson('/api/equipment_loans')->assertUnauthorized();
+
+        $this->actingAsRole('Checkin');
+        $this->getJson('/api/equipment_loans')->assertForbidden();
+
+        $this->actingAsRole('Booking');
+        $this->getJson('/api/equipment_loans')->assertOk()->assertJsonCount(1, 'result');
+    }
+
     public function test_admin_created_loan_is_approved_and_still_checks_stock(): void
     {
         $admin = $this->actingAsRole('Booking');
