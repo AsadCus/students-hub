@@ -247,10 +247,9 @@ const saveRecord =
             })
         );
         const result = body.result;
-        if (type && result != null) {
-            // Upsert into the list by id; refetching afterwards still works.
-            dispatch(setStateData({ type, key: "data", data: result, isMerge: true }));
-        }
+        // Not written into state[type].data: pages keep formatted rows there and
+        // refetch after saving. Merging the raw server record in (with nested
+        // objects like equipment or roles) breaks those tables until the refetch.
         dispatch(successToast(successText));
         return returnData ? result : true;
     };
