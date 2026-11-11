@@ -16,7 +16,10 @@ return [
         'SUPPORT_STRATEGY_MASTER_TYPE'  => 'support_strategies',
         'QUESTION_MASTER_TYPE'          => 'questions',
         'RADIO_OPTION_MASTER_TYPE'      => 'radio_options',
-        'BLOCKED_DATE_MASTER_TYPE'      => 'blocked_dates'
+        'BLOCKED_DATE_MASTER_TYPE'      => 'blocked_dates',
+        'CCA_MASTER_TYPE'               => 'ccas',
+        'EQUIPMENT_MASTER_TYPE'         => 'equipment',
+        'EQUIPMENT_LOAN_MASTER_TYPE'    => 'equipment_loans',
     ],
 
     'MASTER_VALIDATION_ARRAY' => [
@@ -80,6 +83,28 @@ return [
         'BLOCKED_DATE_VALIDATION' => [
             'reason' => ['required', 'string', 'max:100'],
             'date' => ['required', 'date', 'unique:blocked_dates,date']
+        ],
+        // ccas.name uniqueness is added in MasterApiController so updates can ignore the record itself.
+        'CCA_VALIDATION' => [
+            'name' => ['required', 'string', 'max:250'],
+            'description' => ['nullable', 'string'],
+            'active' => ['nullable', 'boolean'],
+        ],
+        'EQUIPMENT_VALIDATION' => [
+            'cca_id' => ['required', 'exists:ccas,id'],
+            'name' => ['required', 'string', 'max:250'],
+            'code' => ['nullable', 'string', 'max:100'],
+            'quantity' => ['required', 'integer', 'min:1'],
+            'active' => ['nullable', 'boolean'],
+        ],
+        // Shared by the kiosk request and the admin create/update. Stock and
+        // duration rules live in EquipmentLoanService.
+        'EQUIPMENT_LOAN_VALIDATION' => [
+            'equipment_id' => ['required', 'exists:equipment,id'],
+            'student_id' => ['required', 'exists:students,id'],
+            'start_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:today'],
+            'end_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:start_date'],
+            'notes' => ['nullable', 'string', 'max:500'],
         ],
     ],
 ];

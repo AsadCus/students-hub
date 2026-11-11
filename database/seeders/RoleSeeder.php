@@ -38,7 +38,10 @@ class RoleSeeder extends Seeder
             Permission::firstOrCreate(['name' => $masterType . ' edit', 'guard_name' => 'web']);
             Permission::firstOrCreate(['name' => $masterType . ' delete', 'guard_name' => 'web']);
 
-            if ($masterType == 'bookings') {
+            // Types with an approval step get a "confirm" permission.
+            $hasConfirm = in_array($masterType, ['bookings', 'equipment_loans']);
+
+            if ($hasConfirm) {
                 Permission::firstOrCreate(['name' => $masterType . ' confirm', 'guard_name' => 'web']);
             }
 
@@ -48,7 +51,7 @@ class RoleSeeder extends Seeder
                 $masterType . ' edit',
                 $masterType . ' delete',
             ];
-            if ($masterType == 'bookings') {
+            if ($hasConfirm) {
                 $superadminPermissions[] = $masterType . ' confirm';
             }
             Role::findByName('Superadmin')->givePermissionTo($superadminPermissions);
@@ -90,6 +93,11 @@ class RoleSeeder extends Seeder
             'equipment create',
             'equipment edit',
             'equipment delete',
+            'equipment_loans view',
+            'equipment_loans create',
+            'equipment_loans edit',
+            'equipment_loans delete',
+            'equipment_loans confirm',
             'bookings view',
             'bookings create',
             'bookings edit',

@@ -27,6 +27,9 @@ class MasterService
         'radio_options'         => \App\Models\RadioOption::class,
         'answers'               => \App\Models\Answer::class,
         'blocked_dates'         => \App\Models\BlockedDate::class,
+        'ccas'                  => \App\Models\Cca::class,
+        'equipment'             => \App\Models\Equipment::class,
+        'equipment_loans'       => \App\Models\EquipmentLoan::class,
     ];
 
     protected function getModel($type)
@@ -220,6 +223,39 @@ class MasterService
         if ($type === config('constants.MASTER_TYPE_ARRAY.QUESTION_MASTER_TYPE')) {
             return $q->with(['supportStrategy', 'radioOptions'])->get();
         }
+        // ?active=1 limits to what the kiosk can offer; the admin pages list everything.
+        if ($type === config('constants.MASTER_TYPE_ARRAY.CCA_MASTER_TYPE')) {
+            return $q->with('equipment')
+                ->when($request?->filled('active'), fn ($q) => $q->where('active', $request->boolean('active')))
+                ->orderBy('name')
+                ->get();
+        }
+        if ($type === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_MASTER_TYPE')) {
+            return $q->with('cca')
+                ->when($request?->filled('active'), fn ($q) => $q->where('active', $request->boolean('active')))
+                ->when($request?->cca_id, fn ($q) => $q->where('cca_id', $request->cca_id))
+                ->orderBy('name')
+                ->get();
+        }
+        if ($type === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_LOAN_MASTER_TYPE')) {
+            return $q->with(['equipment.cca', 'student.class.level', 'user'])
+                ->when($request?->status === 'overdue', fn ($q) => $q
+                    ->where('status', \App\Models\EquipmentLoan::RESERVED)
+                    ->whereDate('end_date', '<', today()))
+                ->when($request?->status && $request->status !== 'overdue', fn ($q) => $q->where('status', $request->status))
+                ->when($request?->student_id, fn ($q) => $q->where('student_id', $request->student_id))
+                ->when($request?->equipment_id, fn ($q) => $q->where('equipment_id', $request->equipment_id))
+                // Loans overlapping the range, not just starting in it.
+                ->when(
+                    is_array($request?->range_time) && isset($request->range_time['start'], $request->range_time['end']),
+                    fn ($q) => $q
+                        ->whereDate('start_date', '<=', \Illuminate\Support\Carbon::parse($request->range_time['end'])->toDateString())
+                        ->whereDate('end_date', '>=', \Illuminate\Support\Carbon::parse($request->range_time['start'])->toDateString())
+                )
+                ->orderByDesc('start_date')
+                ->orderByDesc('id')
+                ->get();
+        }
         return $q->get();
     }
 
@@ -248,6 +284,18 @@ class MasterService
 
     public function delete($type, $id)
     {
+        // The DB would cascade these deletes into loan history; keep the history.
+        if ($type === 'equipment' && \App\Models\EquipmentLoan::where('equipment_id', $id)->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'id' => 'This equipment has loan history. Set it to inactive instead of deleting it.',
+            ]);
+        }
+        if ($type === 'ccas' && \App\Models\EquipmentLoan::whereHas('equipment', fn ($q) => $q->where('cca_id', $id))->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'id' => 'Equipment in this CCA has loan history. Set the CCA to inactive instead of deleting it.',
+            ]);
+        }
+
         if ($type === 'levels') {
             $classes = $this->getModel('class')->where('level_id', $id)->get();
 

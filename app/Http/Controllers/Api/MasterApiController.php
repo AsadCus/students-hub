@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Question;
+use App\Models\EquipmentLoan;
+use App\Services\EquipmentLoanService;
 use App\Models\BlockedDate;
 use App\Models\RadioOption;
 use Illuminate\Http\Request;
@@ -82,6 +84,20 @@ class MasterApiController extends Controller
         }
         if ($type === config('constants.MASTER_TYPE_ARRAY.BLOCKED_DATE_MASTER_TYPE')) {
             $rules = config('constants.MASTER_VALIDATION_ARRAY.BLOCKED_DATE_VALIDATION');
+        }
+        if ($type === config('constants.MASTER_TYPE_ARRAY.CCA_MASTER_TYPE')) {
+            $rules = config('constants.MASTER_VALIDATION_ARRAY.CCA_VALIDATION');
+            $rules['name'][] = Rule::unique('ccas', 'name')->ignore($id);
+        }
+        if ($type === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_MASTER_TYPE')) {
+            $rules = config('constants.MASTER_VALIDATION_ARRAY.EQUIPMENT_VALIDATION');
+        }
+        if ($type === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_LOAN_MASTER_TYPE')) {
+            $rules = config('constants.MASTER_VALIDATION_ARRAY.EQUIPMENT_LOAN_VALIDATION');
+            if ($id !== null) {
+                // An existing loan may keep a start date that's already passed.
+                $rules['start_date'] = ['required', 'date_format:Y-m-d'];
+            }
         }
         return $rules;
     }
@@ -203,6 +219,15 @@ class MasterApiController extends Controller
 
             return response()->json(['status' => true, 'message' => "$type created", 'result' => $result], Response::HTTP_CREATED);
         }
+        if ($type === 'equipment_loans') {
+            // Created by staff, so it's approved straight away.
+            $loan = app(EquipmentLoanService::class)->create(
+                $request->only(['equipment_id', 'student_id', 'start_date', 'end_date', 'notes']),
+                EquipmentLoan::RESERVED,
+                $request->user()?->id
+            );
+            return response()->json(['status' => true, 'message' => 'Loan created', 'result' => $loan->load('equipment.cca', 'student.class.level')], Response::HTTP_CREATED);
+        }
         if ($type === 'users') {
             $data = $request->all();
             $result = $this->masterService->create($type, $data);
@@ -251,6 +276,13 @@ class MasterApiController extends Controller
                     'message' => 'Failed to update question: ' . $e->getMessage()
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
+        }
+        if ($type === 'equipment_loans') {
+            $loan = app(EquipmentLoanService::class)->update(
+                EquipmentLoan::findOrFail($id),
+                $request->only(['equipment_id', 'student_id', 'start_date', 'end_date', 'notes'])
+            );
+            return response()->json(['status' => true, 'message' => 'Loan updated', 'result' => $loan->load('equipment.cca', 'student.class.level')], Response::HTTP_OK);
         }
         if ($type === 'users') {
             $data = $request->all();
