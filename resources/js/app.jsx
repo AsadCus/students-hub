@@ -13,13 +13,11 @@ import {
 } from "react-router-dom";
 import {
     AuthProvider,
-    useAuthHeader,
     useAuthUser,
     useSignOut,
 } from "react-auth-kit";
 import { Provider, useSelector, useDispatch } from "react-redux";
 import { store } from "./components/store";
-import { setAuthToken } from "./components/api";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { setStateData } from "./components/store/global-slice";
@@ -72,9 +70,7 @@ const PrivateRoute = ({ element, permission, loginRequired }) => {
 };
 
 const AppWrapper = () => {
-    const authHeader = useAuthHeader();
     const auth = useAuthUser();
-    const [authReady, setAuthReady] = useState(false);
     const [loginRequired, setLoginRequired] = useState(false);
     const signOut = useSignOut();
     const { spinner, toastMessage, sessionExpired } = useSelector(
@@ -96,13 +92,6 @@ const AppWrapper = () => {
     }, [sessionExpired]);
 
     useEffect(() => {
-        const eject = setAuthToken(authHeader);
-        setAuthReady(true);
-
-        return eject;
-    }, [authHeader]);
-
-    useEffect(() => {
         if (toastMessage) {
             toast.current.show(toastMessage);
         }
@@ -119,11 +108,7 @@ const AppWrapper = () => {
             }
         };
         fetchLoginRequired();
-    }, [authReady, auth()]);
-
-    if (!authReady) {
-        return <div>Loading authentication...</div>;
-    }
+    }, [auth()]);
 
     const protectedRoutes = [
         {
