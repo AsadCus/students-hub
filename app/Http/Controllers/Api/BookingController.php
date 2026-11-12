@@ -25,39 +25,23 @@ class BookingController extends Controller
         $rules['start_time'] = ['required', 'date', 'after:now'];
         $rules['end_time'] = ['required', 'date', 'after:start_time'];
 
-        $validation = Validator::make($request->all(), $rules);
-        if ($validation->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Validation errors',
-                'errors' => $validation->errors(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        Validator::make($request->all(), $rules)->validate();
 
         $now = now();
         $startTime = new DateTime($request->start_time);
         $endTime = new DateTime($request->end_time);
 
         if ($startTime <= $now) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Start time must be in the future.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('Start time must be in the future.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($endTime <= $startTime) {
-            return response()->json([
-                'status' => false,
-                'message' => 'End time must be after start time.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('End time must be after start time.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $blocked = BlockedDate::firstBetween($request->start_time, $request->end_time);
         if ($blocked) {
-            return response()->json([
-                'status' => false,
-                'message' => $blocked->bookingClosedMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail($blocked->bookingClosedMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         // Overlapping bookings for the same facility
@@ -80,10 +64,7 @@ class BookingController extends Controller
             ->first();
 
         if ($existingBooking) {
-            return response()->json([
-                'status' => false,
-                'message' => 'This facility is already booked for the selected time period.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('This facility is already booked for the selected time period.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         // Lanjutkan dengan kode yang ada
@@ -95,11 +76,7 @@ class BookingController extends Controller
         // $booking->status = 'requested'; // Set default status to requested
         $booking->save();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Booking successful!',
-            'result' => $booking->load('student.class.level', 'facility'),
-        ], Response::HTTP_OK);
+        return $this->ok($booking->load('student.class.level', 'facility'), 'Booking successful!', Response::HTTP_OK);
     }
 
     public function confirm(int $id)
@@ -107,24 +84,15 @@ class BookingController extends Controller
         $booking = Booking::find($id);
 
         if (! $booking) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking not found.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail("That booking doesn't exist. It may have been deleted.", Response::HTTP_NOT_FOUND);
         }
 
         if ($booking->status === 'cancelled') {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking already cancelled.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('Booking already cancelled.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'closed') {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking already closed.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('Booking already closed.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $booking->status = 'reserved';
@@ -132,11 +100,7 @@ class BookingController extends Controller
 
         // $this->sendToSocket();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Booking confirmed!',
-            'result' => $booking,
-        ], Response::HTTP_OK);
+        return $this->ok($booking, 'Booking confirmed!', Response::HTTP_OK);
     }
 
     private function sendToSocket($param = null)
@@ -161,47 +125,28 @@ class BookingController extends Controller
 
         if ($booking && ! $request->user('sanctum')?->can('bookings edit')) {
             if ((int) $request->input('student_id') !== $booking->student_id) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'You can only cancel your own booking.',
-                ], Response::HTTP_FORBIDDEN);
+                return $this->fail('You can only cancel your own booking.', Response::HTTP_FORBIDDEN);
             }
             if ($booking->start_time->isPast()) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'This booking has already started and can no longer be cancelled.',
-                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                return $this->fail('This booking has already started and can no longer be cancelled.', Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
 
         if (! $booking) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking not found.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail("That booking doesn't exist. It may have been deleted.", Response::HTTP_NOT_FOUND);
         }
 
         if ($booking->status === 'cancelled') {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking already cancelled.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('Booking already cancelled.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'closed') {
-            return response()->json([
-                'status' => false,
-                'message' => 'Booking already closed.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->fail('Booking already closed.', Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $booking->status = 'cancelled';
         $booking->save();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Booking cancelled!',
-            'result' => $booking,
-        ], Response::HTTP_OK);
+        return $this->ok($booking, 'Booking cancelled!', Response::HTTP_OK);
     }
 }

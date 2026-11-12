@@ -231,9 +231,14 @@ function ManageUser() {
                                                 onChange={handleChange}
                                                 type="password"
                                                 style={{ width: "100%" }}
-                                                required
+                                                required={mode === "create"}
+                                                minLength={8}
                                                 disabled={loading}
-                                                tooltip="Enter user password"
+                                                tooltip={
+                                                    mode === "create"
+                                                        ? "At least 8 characters"
+                                                        : "Leave blank to keep the current password"
+                                                }
                                                 tooltipOptions={{
                                                     position: "bottom",
                                                     mouseTrack: true,
@@ -241,7 +246,9 @@ function ManageUser() {
                                                 }}
                                             />
                                             <label htmlFor="password">
-                                                Password
+                                                {mode === "create"
+                                                    ? "Password"
+                                                    : "New password (optional)"}
                                             </label>
                                         </FloatLabel>
                                     </div>

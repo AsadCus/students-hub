@@ -21,6 +21,14 @@ Kiosk actions that students do without logging in (check-in/out, booking, counse
 
 Follow the existing module that is closest (bookings for anything with an approval flow, facilities for parent/child data) before inventing a structure.
 
+## API responses
+
+- Every response uses one shape (`App\Support\ApiResponse`): success is 2xx `{status: true, message, result}` with `result: []` when empty; failure is 4xx/5xx `{status: false, message, errors?}`.
+- In controllers return `$this->ok($result, 'Level created', 201)` or `$this->fail('…', 404)`. Never build `response()->json(...)` by hand.
+- Don't catch exceptions just to format them. Validation (`$request->validate()` / `Validator::make(...)->validate()`), not-found, 401, 403, 429 and duplicate-key errors are rendered in `bootstrap/app.php`; the first field error becomes `message`.
+- Not found is 404, conflicts are 409/422 with `status: false`. Messages are written for people ("That level doesn't exist. It may have been deleted."); use `MasterApiController::label()` for type names.
+- Uniqueness that must ignore the record being edited goes in the controller as `Rule::unique(...)->ignore($id)`, never as a `unique:` string in `config/constants.php`.
+
 ## Security rules
 
 - Only the types in `config('constants.PUBLIC_MASTER_TYPES')` can be listed without logging in (what the kiosk needs). Every other type's `index`/`show` requires login plus `{type} view`, enforced in the `MasterApiController` constructor. Add a type to the public list only if the kiosk needs it and it holds no personal data.

@@ -30,12 +30,14 @@ return [
     ],
 
     'MASTER_VALIDATION_ARRAY' => [
+        // Uniqueness rules that must ignore the record being edited are added in
+        // MasterApiController::getRuleValidationByType.
         'LEVEL_MASTER_VALIDATION' => [
-            'name' => 'string|required',
+            'name' => ['required', 'string', 'max:100'],
         ],
         'CLASS_MASTER_VALIDATION' => [
-            'name' => 'string|required',
-            'level_id' => 'integer|required',
+            'name' => ['required', 'string', 'max:100'],
+            'level_id' => ['required', 'exists:levels,id'],
         ],
         'STUDENT_MASTER_VALIDATION' => [
             'class_id' => ['required', 'exists:classes,id'],
@@ -46,7 +48,7 @@ return [
             'description' => ['nullable', 'string'],
         ],
         'ROLE_MASTER_VALIDATION' => [
-            'name' => ['required', 'string', 'unique:roles'],
+            'name' => ['required', 'string', 'max:100'],
             'guard_name' => ['nullable', 'string'],
         ],
         'CHECKIN_MASTER_VALIDATION' => [
@@ -63,8 +65,12 @@ return [
             'start_time' => ['required', 'date_format:Y-m-d H:i:s', 'after_or_equal:now'],
             'end_time' => ['required', 'date_format:Y-m-d H:i:s', 'after:start_time'],
         ],
+        'FACILITY_VALIDATION' => [
+            'name' => ['required', 'string', 'max:100'],
+            'parent_id' => ['nullable', 'exists:facilities,id'],
+        ],
         'SUPPORT_STRATEGY_VALIDATION' => [
-            'name' => ['required', 'string', 'max:100', 'unique:support_strategies,name'],
+            'name' => ['required', 'string', 'max:100'],
         ],
         'QUESTION_VALIDATION' => [
             'support_strategy_id' => ['required', 'exists:support_strategies,id'],
@@ -84,7 +90,7 @@ return [
         ],
         'BLOCKED_DATE_VALIDATION' => [
             'reason' => ['required', 'string', 'max:100'],
-            'date' => ['required', 'date', 'unique:blocked_dates,date'],
+            'date' => ['required', 'date'],
         ],
         // ccas.name uniqueness is added in MasterApiController so updates can ignore the record itself.
         'CCA_VALIDATION' => [

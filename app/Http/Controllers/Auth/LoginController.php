@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Foundation\Auth\AuthenticatesUsers;
-use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -51,37 +50,30 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $validatedData = $request->validate([
-            'email'     => ['required', 'email'],
-            'password'  => ['required', 'string']
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
         ]);
 
         $user = User::where([['email', $validatedData['email']], ['deleted_at', null]])->first();
 
-        if (!$user || !Hash::check($validatedData['password'], $user->password)) {
-            throw new HttpResponseException(response([
-                "errors" => [
-                    "message" => [
-                        "Email or password is wrong"
-                    ]
-                ]
-            ], 401));
+        if (! $user || ! Hash::check($validatedData['password'], $user->password)) {
+            return $this->fail('Email or password is wrong.', 401);
         }
 
         $user->tokens()->delete();
 
-        $tokenString = $user->name . "-" . $user->email . "_" . $user->id;
+        $tokenString = $user->name.'-'.$user->email.'_'.$user->id;
 
-        return response()->json([
-            'status' => true,
-            'result' => [
+        return $this->ok([
+            'token' => $user->createToken($tokenString)->plainTextToken,
+            'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->getRoleNames()->first(),
                 'permissions' => $user->getAllPermissions()->pluck('name'),
             ],
-            'token' => $user->createToken($tokenString)->plainTextToken
-        ]);
+        ], 'Logged in');
     }
 
     /**
@@ -95,6 +87,6 @@ class LoginController extends Controller
 
         $user->tokens()->delete();
 
-        return response()->json(['status' => true, 'message' => 'logged out']);
+        return $this->ok(null, 'Logged out');
     }
 }
