@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-    setToastMessage,
-} from "../../store/global-slice";
+    useCancelBookingMutation,
+    useConfirmBookingMutation,
+    useListQuery,
+} from "../../store/hub-api";
+import { useSaveRecord } from "../../store/use-save-record";
+import { reportParams } from "../../utils/report-filters";
+import { notify } from "../../utils/notify";
 import Header from "../../shared/layout/Header";
 import DataTable from "../../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -16,279 +16,117 @@ import { Dropdown } from "primereact/dropdown";
 import { Button } from "primereact/button";
 import { Calendar } from "primereact/calendar";
 
+const EMPTY = {
+    level: null,
+    class: null,
+    student: null,
+    facility: null,
+    start_date: null,
+    start_time: null,
+    end_date: null,
+    end_time: null,
+};
+
+const option = (record) => (record ? { id: record.id, label: record.name } : null);
+
+/** Booking times are stored in UTC as "YYYY-MM-DD HH:mm:00". */
+const formatDateTimeForMySQL = (date) =>
+    date ? `${date.toISOString().slice(0, 16).replace("T", " ")}:00` : null;
+
+const combineDateAndTime = (date, time) => {
+    if (!date || !time) return null;
+    const combinedDate = new Date(date);
+    const timeDate = new Date(time);
+    combinedDate.setHours(timeDate.getHours(), timeDate.getMinutes(), timeDate.getSeconds());
+    return combinedDate;
+};
+
+/** Returns what is wrong with the form, or null when it can be sent. */
+const validationError = (formData) => {
+    const { student, facility, start_date, start_time, end_date, end_time } = formData;
+    if (!student?.id || !facility?.id || !start_date || !start_time || !end_date || !end_time) {
+        return "Fill in every field.";
+    }
+    const start = combineDateAndTime(start_date, start_time);
+    const end = combineDateAndTime(end_date, end_time);
+    if (start <= new Date()) return "The start time must be in the future.";
+    if (end <= start) return "The end time must be after the start time.";
+    return null;
+};
+
 function FacilityReservations() {
-    const dispatch = useDispatch();
-    const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
-    const [editId, setEditId] = useState(null);
     const [timeFilter, setTimeFilter] = useState("month");
     const [dateFilter, setDateFilter] = useState(null);
     const [rangeFilter, setRangeFilter] = useState(null);
-    const [rawBooking, setRawBooking] = useState([]);
-    const [formData, setFormData] = useState({
-        level: null,
-        class: null,
-        student: null,
-        facility: null,
-        start_date: null,
-        start_time: null,
-        end_date: null,
-        end_time: null,
+    const [visible, setVisible] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [formData, setFormData] = useState(EMPTY);
+
+    // Changing a filter changes the query, which refetches on its own.
+    const bookingQuery = useListQuery({
+        type: "bookings",
+        params: reportParams({ timeFilter, dateFilter, rangeFilter }),
     });
-    const [loading, setLoading] = useState(false);
-    const [loadingData, setLoadingData] = useState(true);
-    const [loadingLevels, setLoadingLevels] = useState(true);
-    const [loadingClass, setLoadingClass] = useState(true);
-    const [loadingStudent, setLoadingStudent] = useState(true);
-    const [loadingFacilities, setLoadingFacilities] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        bookings: { data: bookings = [], endPoints: bookingEndPoints },
-        levels: { data: levels = [], endPoints: levelEndPoints },
-        class: { data: classes = [], endPoints: classEndPoints },
-        students: { data: students = [], endPoints: studentEndPoints },
-        facilities: { data: facilities = [], endPoints: facilityEndPoints },
-    } = useSelector((state) => state.global);
+    const levelQuery = useListQuery({ type: "levels" });
+    const classQuery = useListQuery({ type: "class" });
+    const studentQuery = useListQuery({ type: "students" });
+    const facilityQuery = useListQuery({ type: "facilities" });
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("bookings");
+    const [confirmBooking, confirmState] = useConfirmBookingMutation();
+    const [cancelBooking, cancelState] = useCancelBookingMutation();
+    const loading = saving || confirmState.isLoading || cancelState.isLoading;
 
-    const myFetch = (params = {}) => {
-        let currentDateFilter =
-            params?.dateFilter !== undefined ? params.dateFilter : dateFilter;
-        let currentFilter =
-            params?.timeFilter !== undefined ? params.timeFilter : timeFilter;
-        let currentRange =
-            params?.rangeFilter !== undefined
-                ? params.rangeFilter
-                : rangeFilter;
+    const bookings = bookingQuery.data ?? [];
+    const levels = levelQuery.data ?? [];
+    const classes = classQuery.data ?? [];
+    const students = studentQuery.data ?? [];
+    const facilities = facilityQuery.data ?? [];
 
-        let url = bookingEndPoints.collection;
+    const rows = useMemo(
+        () =>
+            bookings.map((i) => ({
+                id: i.id,
+                student: i.student?.name || "N/A",
+                level: i.student?.class?.level?.name || "N/A",
+                class: i.student?.class?.name || "N/A",
+                facility: i.facility?.name
+                    ? `${i.facility?.parent?.name} (${i.facility?.name})`
+                    : "N/A",
+                facility_id: i.facility_id,
+                status: i.status,
+                start_time: i.start_time,
+                end_time: i.end_time,
+            })),
+        [bookings]
+    );
 
-        if (currentFilter) {
-            url += `?time=${currentFilter}`;
-        }
-        if (currentRange) {
-            if (currentRange[0] && currentRange[1]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[1]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            } else if (currentRange && currentRange[0]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[0]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            }
-        }
-        if (currentDateFilter) {
-            const start = currentDateFilter.toISOString();
-            const endDate = new Date(currentDateFilter);
-            endDate.setUTCDate(endDate.getUTCDate() + 1);
-            const end = endDate.toISOString();
-            url += `?range_time[start]=${start}&range_time[end]=${end}`;
-        }
+    const facilityOptions = facilities
+        .filter((i) => i.parent_id)
+        .map((i) => ({ id: i.id, label: `${i.parent?.name} (${i.name})` }));
 
-        dispatch(getRecords({ type: "bookings", endPoint: url }))
-            .then((d) => {
-                setRawBooking(d);
-                if (d) {
-                    const formattedBooking = d.map((i) => ({
-                        id: i.id,
-                        student: i.student?.name || "N/A",
-                        level: i.student?.class?.level?.name || "N/A",
-                        class: i.student?.class?.name || "N/A",
-                        facility: i.facility?.name
-                            ? `${i.facility?.parent.name} (${i.facility?.name})`
-                            : "N/A",
-                        facility_id: i.facility_id,
-                        status: i.status,
-                        start_time: i.start_time,
-                        end_time: i.end_time,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "bookings",
-                            data: formattedBooking,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingData(false));
-    };
-
-    useEffect(() => {
-        myFetch();
-        dispatch(
-            getRecords({
-                type: "levels",
-                endPoint: levelEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingLevels(false));
-        dispatch(
-            getRecords({
-                type: "class",
-                endPoint: classEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingClass(false));
-        dispatch(
-            getRecords({
-                type: "students",
-                endPoint: studentEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingStudent(false));
-        dispatch(
-            getRecords({
-                type: "facilities",
-                endPoint: facilityEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingFacilities(false));
-    }, [dispatch]);
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({
-            level: null,
-            class: null,
-            student: null,
-            facility: null,
-            start_date: null,
-            start_time: null,
-            end_date: null,
-            end_time: null,
-        });
-        setEditId(null);
+    const openForm = (booking = null) => {
+        setEditId(booking?.id ?? null);
+        setFormData(
+            booking
+                ? {
+                      level: option(levels.find((l) => l.id === booking.student?.class?.level?.id)),
+                      class: option(classes.find((c) => c.id === booking.student?.class?.id)),
+                      student: option(students.find((s) => s.id === booking.student?.id)),
+                      facility: facilityOptions.find((f) => f.id === booking.facility_id) ?? null,
+                      start_date: booking.start_time ? new Date(booking.start_time) : null,
+                      start_time: booking.start_time ? new Date(booking.start_time) : null,
+                      end_date: booking.end_time ? new Date(booking.end_time) : null,
+                      end_time: booking.end_time ? new Date(booking.end_time) : null,
+                  }
+                : EMPTY
+        );
+        setError("");
         setVisible(true);
     };
 
-    const handleEdit = (id) => {
-        const booking = rawBooking.find((b) => b.id === id);
-        if (booking) {
-            const levelData = levels.find(
-                (l) => l.id === booking.student.class.level.id
-            );
-            const classData = classes.find(
-                (c) => c.id === booking.student.class.id
-            );
-            const studentData = students.find(
-                (s) => s.id === booking.student.id
-            );
-            const facilityData = facilityOptions.find(
-                (sf) => sf.id === booking.facility_id
-            );
-
-            setFormData({
-                level: levelData
-                    ? { id: levelData.id, label: levelData.name }
-                    : null,
-                class: classData
-                    ? { id: classData.id, label: classData.name }
-                    : null,
-                student: studentData
-                    ? { id: studentData.id, label: studentData.name }
-                    : null,
-                facility: facilityData ?? null,
-                start_date: booking.start_time
-                    ? new Date(booking.start_time)
-                    : null,
-                start_time: booking.start_time
-                    ? new Date(booking.start_time)
-                    : null,
-                end_date: booking.end_time ? new Date(booking.end_time) : null,
-                end_time: booking.end_time ? new Date(booking.end_time) : null,
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleConfirm = (id) => {
-        setLoading(true);
-        setError("");
-        dispatch(
-            updateRecord({
-                type: "bookings",
-                endPoint: `${bookingEndPoints.confirm}${id}`,
-                data: { status: "reserved" },
-                returnData: true,
-            })
-        )
-            .then(() => {
-                dispatch(
-                    setStateData({
-                        key: "alert",
-                        data: {
-                            type: "success",
-                            text: "Booking confirmed successfully.",
-                            show: true,
-                        },
-                    })
-                );
-                myFetch();
-            })
-            .catch((err) => {
-                dispatch(
-                    setStateData({
-                        key: "alert",
-                        data: {
-                            type: "danger",
-                            text: err.message || "Failed to confirm booking.",
-                            show: true,
-                        },
-                    })
-                );
-            })
-            .finally(() => {
-                setLoading(false);
-            });
-    };
-
-    const handleCancel = (id) => {
-        setLoading(true);
-        setError("");
-        dispatch(
-            updateRecord({
-                type: "bookings",
-                endPoint: `${bookingEndPoints.cancel}${id}`,
-                data: { status: "cancelled" },
-                returnData: true,
-            })
-        )
-            .then(() => {
-                dispatch(
-                    setStateData({
-                        key: "alert",
-                        data: {
-                            type: "success",
-                            text: "Booking cancelled successfully.",
-                            show: true,
-                        },
-                    })
-                );
-                myFetch();
-            })
-            .catch((err) => {
-                dispatch(
-                    setStateData({
-                        key: "alert",
-                        data: {
-                            type: "danger",
-                            text: err.message || "Failed to cancel booking.",
-                            show: true,
-                        },
-                    })
-                );
-            })
-            .finally(() => {
-                setLoading(false);
-            });
-    };
+    // Toasts for confirm/cancel come from api-toasts.
+    const handleConfirm = (id) => confirmBooking(id);
+    const handleCancel = (id) => cancelBooking({ id });
 
     const handleChange = (e) => {
         const { name, value } = e.target ? e.target : e;
@@ -302,43 +140,12 @@ function FacilityReservations() {
             } else if (name === "class") {
                 newData.student = null;
             } else if (name === "start_date" || name === "start_time") {
-                const newStartDate =
-                    name === "start_date" ? value : prev.start_date;
-                const newStartTime =
-                    name === "start_time" ? value : prev.start_time;
-                const currentEndDate = prev.end_date;
-                const currentEndTime = prev.end_time;
-
-                if (
-                    newStartDate &&
-                    newStartTime &&
-                    currentEndDate &&
-                    currentEndTime
-                ) {
-                    const newStartDateTime = combineDateAndTime(
-                        newStartDate,
-                        newStartTime
-                    );
-                    const currentEndDateTime = combineDateAndTime(
-                        currentEndDate,
-                        currentEndTime
-                    );
-
-                    if (
-                        newStartDateTime &&
-                        currentEndDateTime &&
-                        newStartDateTime >= currentEndDateTime
-                    ) {
-                        newData.end_date = null;
-                        newData.end_time = null;
-                        dispatch(
-                            setToastMessage({
-                                severity: "info",
-                                summary: "End Time Reset",
-                                detail: "The end time has been reset because the start time was changed.",
-                            })
-                        );
-                    }
+                const start = combineDateAndTime(newData.start_date, newData.start_time);
+                const end = combineDateAndTime(prev.end_date, prev.end_time);
+                if (start && end && start >= end) {
+                    newData.end_date = null;
+                    newData.end_time = null;
+                    notify.info("End time cleared", "The start time moved past it.");
                 }
             }
 
@@ -349,40 +156,15 @@ function FacilityReservations() {
                 new Date(value) < new Date(newData.start_date)
             ) {
                 newData.end_date = null;
-                dispatch(
-                    setToastMessage({
-                        severity: "warn",
-                        summary: "Invalid End Date",
-                        detail: "The end date cannot be before the start date.",
-                    })
-                );
+                notify.warn("Invalid end date", "The end date can't be before the start date.");
             }
 
-            if (
-                name === "end_time" &&
-                newData.start_date &&
-                newData.start_time &&
-                newData.end_date &&
-                value
-            ) {
-                const startDateTime = combineDateAndTime(
-                    newData.start_date,
-                    newData.start_time
-                );
-                const endDateTime = combineDateAndTime(newData.end_date, value);
-                if (
-                    startDateTime &&
-                    endDateTime &&
-                    endDateTime <= startDateTime
-                ) {
+            if (name === "end_time") {
+                const start = combineDateAndTime(newData.start_date, newData.start_time);
+                const end = combineDateAndTime(newData.end_date, value);
+                if (start && end && end <= start) {
                     newData.end_time = null;
-                    dispatch(
-                        setToastMessage({
-                            severity: "warn",
-                            summary: "Invalid End Time",
-                            detail: "End time must be after start time.",
-                        })
-                    );
+                    notify.warn("Invalid end time", "The end time must be after the start time.");
                 }
             }
 
@@ -390,161 +172,37 @@ function FacilityReservations() {
         });
     };
 
-    const formatDateTimeForMySQL = (date) => {
-        if (!date) return null;
-        const pad = (n) => String(n).padStart(2, "0");
-        const year = date.getUTCFullYear();
-        const month = pad(date.getUTCMonth() + 1);
-        const day = pad(date.getUTCDate());
-        const hours = pad(date.getUTCHours());
-        const minutes = pad(date.getUTCMinutes());
-        return `${year}-${month}-${day} ${hours}:${minutes}:00`;
-    };
-
-    const combineDateAndTime = (date, time) => {
-        if (!date || !time) return null;
-
-        const combinedDate = new Date(date);
-        const timeDate = new Date(time);
-
-        combinedDate.setHours(
-            timeDate.getHours(),
-            timeDate.getMinutes(),
-            timeDate.getSeconds()
-        );
-
-        return combinedDate;
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-
-        if (
-            !formData.student?.id ||
-            !formData.facility?.id ||
-            !formData.start_date ||
-            !formData.start_time ||
-            !formData.end_date ||
-            !formData.end_time
-        ) {
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Data Tidak Lengkap",
-                    detail: "Semua field harus diisi.",
-                })
-            );
-            setLoading(false);
+        const problem = validationError(formData);
+        if (problem) {
+            setError(problem);
             return;
         }
-
-        const now = new Date();
-        const startDateTime = combineDateAndTime(
-            formData.start_date,
-            formData.start_time
-        );
-        const endDateTime = combineDateAndTime(
-            formData.end_date,
-            formData.end_time
-        );
-
-        if (!startDateTime || !endDateTime) {
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Format Tanggal/Waktu Tidak Valid",
-                    detail: "Pastikan tanggal dan waktu mulai serta selesai valid.",
-                })
-            );
-            setLoading(false);
-            return;
-        }
-
-        if (startDateTime <= now) {
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Waktu Tidak Valid",
-                    detail: "Waktu mulai harus di masa depan.",
-                })
-            );
-            setLoading(false);
-            return;
-        }
-
-        if (endDateTime <= startDateTime) {
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Waktu Tidak Valid",
-                    detail: "Waktu selesai harus setelah waktu mulai.",
-                })
-            );
-            setLoading(false);
-            return;
-        }
-
-        const dataToSubmit = {
-            student_id: formData.student?.id,
-            facility_id: formData.facility?.id,
-            start_time: formatDateTimeForMySQL(startDateTime),
-            end_time: formatDateTimeForMySQL(endDateTime),
-        };
-
-        try {
-            dispatch(
-                mode === "create"
-                    ? createRecord({
-                          type: "bookings",
-                          endPoint: bookingEndPoints.store,
-                          data: dataToSubmit,
-                          returnData: true,
-                      })
-                    : updateRecord({
-                          type: "bookings",
-                          endPoint: `${bookingEndPoints.update}${editId}`,
-                          data: dataToSubmit,
-                          returnData: true,
-                      })
-            ).then((success) => {
-                if (success) {
-                    setVisible(false);
-                    myFetch();
-                }
-            });
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        const saved = await save(editId, {
+            student_id: formData.student.id,
+            facility_id: formData.facility.id,
+            start_time: formatDateTimeForMySQL(
+                combineDateAndTime(formData.start_date, formData.start_time)
+            ),
+            end_time: formatDateTimeForMySQL(
+                combineDateAndTime(formData.end_date, formData.end_time)
+            ),
+        });
+        if (saved) setVisible(false);
     };
 
-    const levelOptions = levels.map((i) => ({ id: i.id, label: i.name }));
+    const levelOptions = levels.map(option);
     const classOptions = formData.level
-        ? classes
-              .filter((c) => c.level_id === formData.level.id)
-              .map((i) => ({ id: i.id, label: i.name }))
+        ? classes.filter((c) => c.level_id === formData.level.id).map(option)
         : [];
     const studentOptions = formData.class
-        ? students
-              .filter((s) => s.class_id === formData.class.id)
-              .map((i) => ({ id: i.id, label: i.name }))
+        ? students.filter((s) => s.class_id === formData.class.id).map(option)
         : [];
-    const facilityOptions = facilities
-        .filter((i) => i.parent_id)
-        .map((i) => ({
-            id: i.id,
-            label: `${i.parent.name} (${i.name})`,
-        }));
 
-    const isDataReady =
-        !loadingData &&
-        !loadingLevels &&
-        !loadingClass &&
-        !loadingStudent &&
-        !loadingFacilities;
+    const isDataReady = [bookingQuery, levelQuery, classQuery, studentQuery, facilityQuery].every(
+        (q) => !q.isLoading
+    );
 
     return (
         <div>
@@ -559,9 +217,12 @@ function FacilityReservations() {
                             <DataTable
                                 type="bookings"
                                 identifier="id"
-                                onFetch={(params) => myFetch(params)}
-                                onAdd={handleAdd}
-                                onEdit={handleEdit}
+                                collection={rows}
+                                onFetch={() => {}} // filters drive the query
+                                onAdd={() => openForm()}
+                                onEdit={(id) => openForm(bookings.find((b) => b.id === id))}
+                                onDelete={remove}
+                                onDeleteMany={removeMany}
                                 onConfirm={handleConfirm}
                                 onCancel={handleCancel}
                                 title="Facility Reservations"
@@ -574,9 +235,9 @@ function FacilityReservations() {
                             />
                             <Dialog
                                 header={
-                                    mode === "create"
-                                        ? "Add Facility Reservation"
-                                        : "Edit Facility Reservation"
+                                    editId
+                                        ? "Edit Facility Reservation"
+                                        : "Add Facility Reservation"
                                 }
                                 visible={visible}
                                 style={{ width: "600px" }}
@@ -811,9 +472,7 @@ function FacilityReservations() {
                                         />
                                         <Button
                                             label={
-                                                mode === "create"
-                                                    ? "Create"
-                                                    : "Update"
+editId ? "Update" : "Create"
                                             }
                                             icon="pi pi-check"
                                             type="submit"
