@@ -47,6 +47,11 @@ describe("toastFor", () => {
         expect(toastFor(action("list", "fulfilled", { kind: "query", args: { type: "levels" } }))).toBeNull();
     });
 
+    it("stays silent when the caller reports the outcome itself (bulk delete)", () => {
+        expect(toastFor(action("remove", "fulfilled", { args: { type: "class", id: 1, silent: true } }))).toBeNull();
+        expect(toastFor(action("remove", "rejected", { args: { type: "class", id: 1, silent: true }, payload: { status: 422, message: "x" } }))).toBeNull();
+    });
+
     it("shows the import summary as the detail", () => {
         expect(toastFor(action("importRecords", "fulfilled", { args: { type: "activities" }, payload: { message: "1 added, 2 updated" } }))).toMatchObject({ summary: "Import finished", detail: "1 added, 2 updated" });
     });

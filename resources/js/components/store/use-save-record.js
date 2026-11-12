@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useCreateMutation, useRemoveMutation, useUpdateMutation } from "./hub-api";
+import { notify } from "../utils/notify";
+import { countOf } from "../utils/labels";
 
 /**
  * Create/update/delete for one master type, for admin forms.
@@ -29,9 +31,26 @@ export function useSaveRecord(type) {
     // Failures toast through api-toasts; nothing to show inline.
     const remove = (id) => removeRecord({ type, id });
 
+    /** Delete several records with one toast for the whole batch. */
+    const removeMany = async (ids) => {
+        const results = await Promise.allSettled(
+            ids.map((id) => removeRecord({ type, id, silent: true }).unwrap())
+        );
+        const failed = results.filter((r) => r.status === "rejected");
+        if (failed.length === 0) {
+            notify.success(`${countOf(ids.length, type)} deleted`);
+        } else {
+            notify.error(
+                `Couldn't delete ${failed.length} of ${countOf(ids.length, type)}`,
+                failed[0].reason?.message
+            );
+        }
+    };
+
     return {
         save,
         remove,
+        removeMany,
         saving: createState.isLoading || updateState.isLoading,
         error,
         setError,
