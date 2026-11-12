@@ -277,6 +277,17 @@ class MasterService
         return $this->getModel($type)->create($data);
     }
 
+    /**
+     * Update the record matching $keys, or create it.
+     *
+     * @param  array<string, mixed>  $keys
+     * @param  array<string, mixed>  $data
+     */
+    public function upsert(string $type, array $keys, array $data)
+    {
+        return $this->getModel($type)::updateOrCreate($keys, $data);
+    }
+
     public function update($type, $id, array $data)
     {
         $model = $this->getModel($type)->findOrFail($id);
@@ -347,12 +358,6 @@ class MasterService
 
         $model = $this->getModel($type)->findOrFail($id);
         $model->delete();
-    }
-
-    public function deleteAll($type)
-    {
-        $model = $this->getModel($type)->get();
-        $model->each->delete();
     }
 
     private function cascade($type, $id)

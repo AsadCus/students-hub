@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Answer;
 use App\Models\BlockedDate;
 use App\Models\EquipmentLoan;
 use App\Models\Question;
@@ -11,9 +12,11 @@ use App\Services\EquipmentLoanService;
 use App\Services\MasterService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\Models\Role;
 
@@ -157,15 +160,14 @@ class MasterApiController extends Controller
             $data = $request->only(['support_strategy_id', 'order', 'text', 'type']);
             $radioOptions = $request->input('radio_options', []);
             try {
-                $storedQuestion = $this->masterService->create($type, $data);
-                if ($data['type'] === 'radio' && ! empty($radioOptions)) {
-                    foreach ($radioOptions as $option) {
-                        $this->masterService->create('radio_options', [
-                            'question_id' => $storedQuestion->id,
-                            'text' => $option,
-                        ]);
+                $storedQuestion = DB::transaction(function () use ($type, $data, $radioOptions) {
+                    $question = $this->masterService->create($type, $data);
+                    if ($data['type'] === 'radio') {
+                        $this->syncRadioOptions($question->id, $radioOptions);
                     }
-                }
+
+                    return $question;
+                });
 
                 return response()->json([
                     'status' => true,
@@ -214,6 +216,9 @@ class MasterApiController extends Controller
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
+        if ($type === 'bookings' && ($blocked = BlockedDate::firstBetween($request->start_time, $request->end_time))) {
+            return response()->json(['status' => false, 'message' => $blocked->bookingClosedMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
         if ($type === 'blocked_dates') {
             $data = $request->all();
             $exists = $this->blockedDate->where('date', $request->date)->exists();
@@ -261,18 +266,12 @@ class MasterApiController extends Controller
             $radioOptions = $request->input('radio_options', []);
 
             try {
-                $updatedQuestion = $this->masterService->update($type, $id, $data);
-                if ($data['type'] === 'radio') {
-                    $this->radioOption->where('question_id', $id)->delete();
-                    foreach ($radioOptions as $option) {
-                        $this->masterService->create('radio_options', [
-                            'question_id' => $id,
-                            'text' => $option,
-                        ]);
-                    }
-                } else {
-                    $this->radioOption->where('question_id', $id)->delete();
-                }
+                $updatedQuestion = DB::transaction(function () use ($type, $id, $data, $radioOptions) {
+                    $question = $this->masterService->update($type, $id, $data);
+                    $this->syncRadioOptions($id, $data['type'] === 'radio' ? $radioOptions : []);
+
+                    return $question;
+                });
 
                 return response()->json([
                     'status' => true,
@@ -285,6 +284,9 @@ class MasterApiController extends Controller
                     'message' => 'Failed to update question: '.$e->getMessage(),
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
+        }
+        if ($type === 'bookings' && ($blocked = BlockedDate::firstBetween($request->start_time, $request->end_time))) {
+            return response()->json(['status' => false, 'message' => $blocked->bookingClosedMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         if ($type === 'equipment_loans') {
             $loan = app(EquipmentLoanService::class)->update(
@@ -348,14 +350,8 @@ class MasterApiController extends Controller
                 $classValidationRules = $this->getRuleValidationByType('class');
                 $studentValidationRules = $this->getRuleValidationByType('students');
 
-                $this->masterService->deleteAll('checkin');
-                $this->masterService->deleteAll('bookings');
-                $this->masterService->deleteAll('answers');
-                $this->masterService->deleteAll('counsels');
-                $this->masterService->deleteAll('students');
-                $this->masterService->deleteAll('class');
-                $this->masterService->deleteAll('levels');
-
+                // Existing levels, classes and students are matched by name and kept, so
+                // their check-ins, bookings and counsel records survive a re-import.
                 foreach ($rows as $index => $row) {
                     $rowData = array_combine(array_map('strtolower', $headers), $row);
                     $rowData = array_change_key_case($rowData, CASE_LOWER);
@@ -437,21 +433,11 @@ class MasterApiController extends Controller
                 $imported = [];
                 DB::beginTransaction();
 
-                if ($type === 'activities') {
-                    $this->masterService->deleteAll('checkin');
-                    $this->masterService->deleteAll('activities');
-                }
-                if ($type === 'support_strategies') {
-                    $this->masterService->deleteAll('answers');
-                    $this->masterService->deleteAll('counsels');
-                    $this->masterService->deleteAll('radio_options');
-                    $this->masterService->deleteAll('questions');
-                    $this->masterService->deleteAll('support_strategies');
-                }
-                if ($type === 'facilities') {
-                    $this->masterService->deleteAll('bookings');
-                    $this->masterService->deleteAll('facilities');
-                }
+                // Types with a natural key are updated in place instead of wiped and
+                // recreated, so history that points at them (check-ins, bookings,
+                // questions and counsel answers) is kept.
+                $importKeys = $this->importKeys($type);
+                $updated = 0;
 
                 foreach ($rows as $index => $row) {
                     $rowData = array_combine($transformedHeaders, $row);
@@ -490,6 +476,10 @@ class MasterApiController extends Controller
                     }
 
                     $validationRules = $this->getRuleValidationByType($type);
+                    if ($importKeys) {
+                        // Matching on the key replaces the "must be unique" check.
+                        $validationRules = $this->withoutUniqueRules($validationRules);
+                    }
                     $validator = Validator::make($rowData, $validationRules);
 
                     if ($validator->fails()) {
@@ -497,7 +487,12 @@ class MasterApiController extends Controller
                     }
 
                     try {
-                        $result = $this->masterService->create($type, $rowData);
+                        if ($importKeys) {
+                            $result = $this->masterService->upsert($type, Arr::only($rowData, $importKeys), $rowData);
+                            $updated += $result->wasRecentlyCreated ? 0 : 1;
+                        } else {
+                            $result = $this->masterService->create($type, $rowData);
+                        }
 
                         // Assign role for users if provided
                         if ($type === 'users' && $importedAccess) {
@@ -524,7 +519,9 @@ class MasterApiController extends Controller
 
                 return response()->json([
                     'status' => true,
-                    'message' => count($imported).' '.($type).' imported successfully',
+                    'message' => $importKeys
+                        ? (count($imported) - $updated).' added, '.$updated.' updated'
+                        : count($imported).' '.($type).' imported successfully',
                     'result' => $imported,
                 ], Response::HTTP_CREATED);
             }
@@ -543,6 +540,80 @@ class MasterApiController extends Controller
         $this->masterService->delete($type, $id);
 
         return response()->json(['status' => true, 'message' => "$type deleted"], Response::HTTP_OK);
+    }
+
+    /**
+     * Make a question's radio options match $texts without breaking answers.
+     *
+     * Options whose text is unchanged keep their id (and their answers), even
+     * if reordered. Remaining old options take the remaining new texts in
+     * order (typo fixes), extra texts become new options, and leftover options
+     * are deleted only if nobody chose them.
+     *
+     * @param  list<string>  $texts
+     */
+    private function syncRadioOptions(int $questionId, array $texts): void
+    {
+        $existing = $this->radioOption->where('question_id', $questionId)->orderBy('id')->get();
+        $unmatchedTexts = [];
+
+        foreach ($texts as $text) {
+            $index = $existing->search(fn ($option) => $option->text === $text);
+            if ($index === false) {
+                $unmatchedTexts[] = $text;
+            } else {
+                $existing->forget($index);
+            }
+        }
+
+        foreach ($existing->values() as $i => $option) {
+            if (isset($unmatchedTexts[$i])) {
+                $option->update(['text' => $unmatchedTexts[$i]]);
+
+                continue;
+            }
+            if (Answer::where('radio_option_id', $option->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'radio_options' => "Option \"{$option->text}\" has already been chosen in answers, so it can't be removed. Edit its text instead.",
+                ]);
+            }
+            $option->delete();
+        }
+
+        foreach (array_slice($unmatchedTexts, $existing->count()) as $text) {
+            $this->radioOption->create(['question_id' => $questionId, 'text' => $text]);
+        }
+    }
+
+    /**
+     * Columns that identify an existing record during import, for types that are
+     * updated in place rather than duplicated.
+     *
+     * @return list<string>
+     */
+    private function importKeys(string $type): array
+    {
+        return [
+            'activities' => ['name'],
+            'support_strategies' => ['name'],
+            'facilities' => ['name', 'parent_id'],
+        ][$type] ?? [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array<string, mixed>
+     */
+    private function withoutUniqueRules(array $rules): array
+    {
+        return array_map(function ($fieldRules) {
+            $list = is_string($fieldRules) ? explode('|', $fieldRules) : $fieldRules;
+
+            return array_values(array_filter(
+                $list,
+                fn ($rule) => ! (is_string($rule) && str_starts_with($rule, 'unique:')) && ! $rule instanceof \Illuminate\Validation\Rules\Unique
+            ));
+        }, $rules);
     }
 
     private function changeImportHeader($type)
