@@ -5,7 +5,8 @@ import { Button } from "primereact/button";
 import { Menu } from "primereact/menu";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthUser, useSignOut } from "react-auth-kit";
-import api from "../../api";
+import { useDispatch } from "react-redux";
+import { hubApi, useLogoutMutation } from "../../store/hub-api";
 
 const Header = () => {
     const auth = useAuthUser();
@@ -13,24 +14,16 @@ const Header = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const menuRef = useRef(null);
+    const dispatch = useDispatch();
+    const [logout] = useLogoutMutation();
 
-    const handleLogout = () => {
-        api.post("/api/logout")
-            .then((response) => {
-                if (response.data.status) {
-                    signOut();
-                    navigate("/login");
-                }
-            })
-            .catch((error) => {
-                if (
-                    error.response?.status === 401 &&
-                    error.response?.data?.message === "Unauthenticated."
-                ) {
-                    signOut();
-                    navigate("/login");
-                }
-            });
+    // Always end the local session, even if the server call fails (e.g. the
+    // token already expired); the token is revoked server-side when it can be.
+    const handleLogout = async () => {
+        await logout().unwrap().catch(() => {});
+        dispatch(hubApi.util.resetApiState());
+        signOut();
+        navigate("/login");
     };
 
     const baseItems = [

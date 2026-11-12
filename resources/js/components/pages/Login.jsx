@@ -1,91 +1,47 @@
-import axios from "axios";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSignIn } from "react-auth-kit";
 import { useDispatch } from "react-redux";
-import { setStateData } from "../store/global-slice";
+import { hubApi, useLoginMutation } from "../store/hub-api";
 import { Card } from "primereact/card";
 import { FloatLabel } from "primereact/floatlabel";
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 
+/** Where each role lands after logging in. */
+const landingPage = (permissions) => {
+    if (permissions.includes("dashboard view")) return "/dashboard";
+    if (permissions.includes("dashboard-checkin view")) return "/checkin";
+    if (permissions.includes("dashboard-bookings view")) return "/facility-reservations";
+    if (permissions.includes("dashboard-counsels view")) return "/counsels";
+    return "/home";
+};
+
 const Login = () => {
     const navigate = useNavigate();
     const signIn = useSignIn();
     const dispatch = useDispatch();
+    const [login, { isLoading: loading }] = useLoginMutation();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
-        setLoading(true);
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Logging in..." },
-            })
-        );
         try {
-            const response = await axios.post("/api/login", {
-                email,
-                password,
+            const { token, user } = await login({ email, password }).unwrap();
+            dispatch(hubApi.util.resetApiState()); // nothing cached from a previous user
+            signIn({
+                token,
+                expiresIn: 720, // minutes; matches the API token lifetime (config/sanctum.php)
+                tokenType: "Bearer",
+                authState: user,
             });
-            setLoading(false);
-            dispatch(
-                setStateData({
-                    key: "spinner",
-                    data: { show: false, text: "" },
-                })
-            );
-            if (response.data.status) {
-                const { token, user } = response.data.result;
-                signIn({
-                    token,
-                    expiresIn: 720, // minutes; matches the API token lifetime (config/sanctum.php)
-                    tokenType: "Bearer",
-                    authState: user,
-                });
-                if (
-                    user.permissions.includes("dashboard view")
-                ) {
-                    navigate("/dashboard");
-                } else if (
-                    user.permissions.includes(
-                        "dashboard-checkin view"
-                    )
-                ) {
-                    navigate("/checkin");
-                } else if (
-                    user.permissions.includes(
-                        "dashboard-bookings view"
-                    )
-                ) {
-                    navigate("/facility-reservations");
-                } else if (
-                    user.permissions.includes(
-                        "dashboard-counsels view"
-                    )
-                ) {
-                    navigate("/counsels");
-                } else {
-                    navigate("/home");
-                }
-            }
-        } catch (error) {
-            setLoading(false);
-            dispatch(
-                setStateData({
-                    key: "spinner",
-                    data: { show: false, text: "" },
-                })
-            );
-            const errorMsg =
-                error.response?.data?.message ||
-                "Can't reach the server. Check your connection and try again.";
-            setError(errorMsg);
+            navigate(landingPage(user.permissions));
+        } catch (err) {
+            // Shown under the form; login errors never toast.
+            setError(err.message);
         }
     };
 
