@@ -34,9 +34,7 @@ class MasterApiController extends Controller
             return response()->json(['status' => false, 'message' => 'Master Type not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // Loan records are staff-only; the kiosk only needs CCAs and equipment.
-        // ponytail: other types are still publicly listable until Phase 1 (C2) adds the allowlist.
-        if ($urlMasterType === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_LOAN_MASTER_TYPE')) {
+        if (!in_array($urlMasterType, config('constants.PUBLIC_MASTER_TYPES'))) {
             $this->middleware(['auth:sanctum', 'permission:' . $urlMasterType . ' view'], ['only' => ['index', 'show']]);
         }
         $this->middleware('permission:' . $urlMasterType . ' create', ['only' => ['store', 'import']]);

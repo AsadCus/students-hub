@@ -22,6 +22,13 @@ return [
         'EQUIPMENT_LOAN_MASTER_TYPE'    => 'equipment_loans',
     ],
 
+    // Types the kiosk lists without logging in. Every other type needs a
+    // login plus "{type} view" to list or show.
+    'PUBLIC_MASTER_TYPES' => [
+        'levels', 'class', 'students', 'activities', 'facilities', 'blocked_dates',
+        'bookings', 'checkin', 'support_strategies', 'questions', 'ccas', 'equipment',
+    ],
+
     'MASTER_VALIDATION_ARRAY' => [
         'LEVEL_MASTER_VALIDATION' => [
             'name' => 'string|required'

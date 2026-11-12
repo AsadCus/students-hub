@@ -69,7 +69,7 @@ class MasterService
                 })->get();
         }
         if ($type === config('constants.MASTER_TYPE_ARRAY.CHECKIN_MASTER_TYPE')) {
-            return $q->with(['student.class.level', 'activity'])
+            return $q->with(auth('sanctum')->check() ? ['student.class.level', 'activity'] : ['activity'])
                 ->when($request->student_id, function ($q) use ($request) {
                     return $q->where('student_id', $request->student_id);
                 })
@@ -117,7 +117,7 @@ class MasterService
                 ->get();
         }
         if ($type === config('constants.MASTER_TYPE_ARRAY.BOOKING_MASTER_TYPE')) {
-            return $q->with(['student.class.level', 'facility.parent'])
+            return $q->with(auth('sanctum')->check() ? ['student.class.level', 'facility.parent'] : ['facility.parent'])
                 ->when($request->student_id, function ($q) use ($request) {
                     return $q->where('student_id', $request->student_id);
                 })
