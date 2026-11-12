@@ -21,6 +21,9 @@ import {
     EQUIPMENT_LOAN_STATE,
 } from "./state";
 import { stateKey } from "../utils/constants";
+import { ApiError, toApiError } from "./api-error";
+
+export { ApiError };
 
 const INITIAL_STATE = {
     [stateKey.app]: { ...APP_STATE, pending: 0 },
@@ -113,40 +116,6 @@ const { loadingStarted, loadingFinished } = globalSlice.actions;
 
 export const setToastMessage = (message) => (dispatch) => {
     dispatch(setStateData({ key: "toastMessage", data: message, isMerge: false }));
-};
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-export class ApiError extends Error {
-    constructor(message, { status = null, fieldErrors = {}, body = null } = {}) {
-        super(message);
-        this.name = "ApiError";
-        this.status = status; // HTTP status, or null when the server was unreachable
-        this.fieldErrors = fieldErrors; // Laravel 422 `errors` object, for inline form messages
-        this.body = body;
-    }
-}
-
-const toApiError = (error, fallback) => {
-    if (error instanceof ApiError) return error;
-    const res = error?.response;
-    if (!res) {
-        return new ApiError(
-            "Can't reach the server. Check your connection and try again."
-        );
-    }
-    const body = res.data ?? {};
-    const fieldErrors = isPlainObject(body.errors) ? body.errors : {};
-    const firstFieldError = Object.values(fieldErrors).flat()[0];
-    // Laravel puts the useful text in errors.* for 422 and in message otherwise.
-    // Its own 401 body ("Unauthenticated.") is replaced with something actionable.
-    const message =
-        res.status === 401
-            ? "Your session has expired. Log in again."
-            : firstFieldError || body.message || `${fallback} (HTTP ${res.status})`;
-    return new ApiError(message, { status: res.status, fieldErrors, body });
 };
 
 // ---------------------------------------------------------------------------

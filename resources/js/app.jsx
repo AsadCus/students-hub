@@ -2,7 +2,7 @@ import "./bootstrap";
 import "../css/app.css";
 
 import { PrimeReactProvider } from "primereact/api";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
     BrowserRouter,
@@ -21,7 +21,8 @@ import { store } from "./components/store";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { setStateData } from "./components/store/global-slice";
-import api from "./components/api";
+import { hubApi, useLoginRequiredQuery } from "./components/store/hub-api";
+import { bindToast } from "./components/utils/notify";
 import { stateKey } from "./components/utils/constants";
 import Login from "./components/pages/Login";
 import Home from "./components/pages/Home";
@@ -75,7 +76,7 @@ const PrivateRoute = ({ element, permission, loginRequired = true }) => {
 
 const AppWrapper = () => {
     const auth = useAuthUser();
-    const [loginRequired, setLoginRequired] = useState(false);
+    const { data: loginRequired = false } = useLoginRequiredQuery();
     const signOut = useSignOut();
     const { spinner, toastMessage, sessionExpired } = useSelector(
         (state) => state.global[stateKey.app]
@@ -88,6 +89,7 @@ const AppWrapper = () => {
     useEffect(() => {
         if (!sessionExpired) return;
         dispatch(setStateData({ key: "sessionExpired", data: false, isMerge: false }));
+        dispatch(hubApi.util.resetApiState()); // drop the previous user's cached data
         if (auth()) {
             // ponytail: anonymous kiosk users only see the toast, no redirect
             signOut();
@@ -100,19 +102,6 @@ const AppWrapper = () => {
             toast.current.show(toastMessage);
         }
     }, [toastMessage]);
-
-    useEffect(() => {
-        const fetchLoginRequired = async () => {
-            try {
-                const res = await api.get("api/settings/login-required");
-                const enabled = !!res?.data?.result?.login_required;
-                setLoginRequired(enabled);
-            } catch (e) {
-                // ignore toggle fetch error, do not block app
-            }
-        };
-        fetchLoginRequired();
-    }, [auth()]);
 
     const protectedRoutes = [
         {
@@ -177,7 +166,12 @@ const AppWrapper = () => {
 
     return (
         <>
-            <Toast ref={toast} />
+            <Toast
+                ref={(instance) => {
+                    toast.current = instance;
+                    bindToast(instance); // the app's only toast host
+                }}
+            />
             {spinner.show && (
                 <div
                     style={{
