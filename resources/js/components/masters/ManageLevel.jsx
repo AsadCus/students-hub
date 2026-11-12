@@ -1,12 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import { useIsAuthenticated } from "react-auth-kit";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../store/global-slice";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -15,111 +10,37 @@ import { FloatLabel } from "primereact/floatlabel";
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 
+const EMPTY = { name: "" };
+
 function ManageLevel() {
-    const dispatch = useDispatch();
     const isAuthenticated = useIsAuthenticated();
+    const { data: levels = [], refetch } = useListQuery({ type: "levels" });
+    const { save, remove, saving, error, setError } = useSaveRecord("levels");
     const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
-    const [formData, setFormData] = useState({
-        name: "",
-    });
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const {
-        levels: { data: levels = [], endPoints: levelEndPoints },
-    } = useSelector((state) => state.global);
+    const [formData, setFormData] = useState(EMPTY);
 
-    const myFetch = () => {
-        dispatch(
-            getRecords({
-                type: "levels",
-                endPoint: levelEndPoints.collection,
-            })
-        ).then((d) => {
-            if (d) {
-                const formattedLevels = d.map((i) => ({
-                    id: i.id,
-                    name: i.name,
-                    created_at: i.created_at,
-                    updated_at: i.updated_at,
-                }));
-                dispatch(
-                    setStateData({
-                        type: "levels",
-                        data: formattedLevels,
-                        key: "data",
-                        isMerge: false,
-                    })
-                );
-            }
-        });
-    };
+    const rows = useMemo(
+        () =>
+            levels.map((l) => ({
+                id: l.id,
+                name: l.name,
+                created_at: l.created_at,
+                updated_at: l.updated_at,
+            })),
+        [levels]
+    );
 
-    useEffect(() => {
-        myFetch();
-    }, [dispatch]);
-
-    const handleEdit = (id) => {
-        const level = levels.find((u) => u.id === id);
-        if (level) {
-            setFormData({
-                name: level.name,
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({ name: "" });
+    const openForm = (level = null) => {
+        setEditId(level?.id ?? null);
+        setFormData(level ? { name: level.name } : EMPTY);
+        setError("");
         setVisible(true);
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            if (mode === "create") {
-                const success = await dispatch(
-                    createRecord({
-                        type: "levels",
-                        endPoint: levelEndPoints.store,
-                        data: formData,
-                    })
-                );
-                if (success) {
-                    setFormData({ name: "" });
-                    setVisible(false);
-                    myFetch();
-                }
-            } else {
-                const success = await dispatch(
-                    updateRecord({
-                        type: "levels",
-                        endPoint: `${levelEndPoints.update}${editId}`,
-                        data: formData,
-                    })
-                );
-                if (success) {
-                    setFormData({ name: "" });
-                    setVisible(false);
-                    myFetch();
-                }
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        if (await save(editId, formData)) setVisible(false);
     };
 
     return (
@@ -136,17 +57,15 @@ function ManageLevel() {
                                 type="levels"
                                 identifier="id"
                                 hasImport={true}
-                                onFetch={myFetch}
-                                onAdd={handleAdd}
-                                onEdit={handleEdit}
+                                collection={rows}
+                                onFetch={refetch}
+                                onAdd={() => openForm()}
+                                onEdit={(id) => openForm(levels.find((l) => l.id === id))}
+                                onDelete={remove}
                                 title="Level"
                             />
                             <Dialog
-                                header={
-                                    mode === "create"
-                                        ? `Add Level`
-                                        : `Edit Level`
-                                }
+                                header={editId ? "Edit Level" : "Add Level"}
                                 visible={visible}
                                 style={{ width: "400px" }}
                                 onHide={() => setVisible(false)}
@@ -165,12 +84,15 @@ function ManageLevel() {
                                     <div style={{ marginBottom: "2rem" }}>
                                         <FloatLabel>
                                             <InputText
+                                                id="name"
                                                 name="name"
                                                 value={formData.name}
-                                                onChange={handleChange}
+                                                onChange={(e) =>
+                                                    setFormData({ name: e.target.value })
+                                                }
                                                 style={{ width: "100%" }}
                                                 required
-                                                disabled={loading}
+                                                disabled={saving}
                                                 tooltip="Enter level name"
                                                 tooltipOptions={{
                                                     position: "bottom",
@@ -194,17 +116,13 @@ function ManageLevel() {
                                             type="button"
                                             onClick={() => setVisible(false)}
                                             className="p-button-text"
-                                            disabled={loading}
+                                            disabled={saving}
                                         />
                                         <Button
-                                            label={
-                                                mode === "create"
-                                                    ? "Create"
-                                                    : "Update"
-                                            }
+                                            label={editId ? "Update" : "Create"}
                                             icon="pi pi-check"
                                             type="submit"
-                                            disabled={loading}
+                                            disabled={saving}
                                             autoFocus
                                         />
                                     </div>

@@ -1,12 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import { useIsAuthenticated } from "react-auth-kit";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../store/global-slice";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -16,75 +11,42 @@ import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 import { Checkbox } from "primereact/checkbox";
 
+const EMPTY = { name: "", email: "", password: "", access: "" };
+
 function ManageUser() {
-    const dispatch = useDispatch();
     const isAuthenticated = useIsAuthenticated();
+    const { data: users = [], refetch: myFetch } = useListQuery({ type: "users" });
+    const { save, remove, saving: loading, error, setError } = useSaveRecord("users");
     const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
-    const [formData, setFormData] = useState({
-        name: "",
-        email: "",
-        password: "",
-        access: "",
-    });
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const {
-        users: { data: users = [], endPoints: userEndPoints },
-    } = useSelector((state) => state.global);
+    const [formData, setFormData] = useState(EMPTY);
+    const mode = editId ? "edit" : "create";
 
-    const myFetch = () => {
-        dispatch(
-            getRecords({
-                type: "users",
-                endPoint: userEndPoints.collection,
-                key: "data",
-            })
-        ).then((d) => {
-            const formattedUser = d.map((i) => ({
-                id: i.id,
-                name: i.name || "N/A",
-                email: i.email || "N/A",
-                role: i.roles[0]?.name,
-                created_at: i.created_at,
-                updated_at: i.updated_at,
-            }));
-            dispatch(
-                setStateData({
-                    type: "users",
-                    data: formattedUser,
-                    key: "data",
-                    isMerge: false,
-                })
-            );
-        });
-    };
+    const rows = useMemo(
+        () =>
+            users.map((u) => ({
+                id: u.id,
+                name: u.name || "N/A",
+                email: u.email || "N/A",
+                role: u.roles?.[0]?.name,
+                created_at: u.created_at,
+                updated_at: u.updated_at,
+            })),
+        [users]
+    );
 
-    useEffect(() => {
-        myFetch();
-    }, [dispatch]);
-
-    const handleEdit = (id) => {
-        const user = users.find((u) => u.id === id);
-        if (user) {
-            setFormData({
-                name: user.name,
-                email: user.email,
-                password: "",
-                access: user.role,
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({ name: "", email: "", password: "", access: "" });
+    const openForm = (user = null) => {
+        setEditId(user?.id ?? null);
+        setFormData(
+            user
+                ? { name: user.name, email: user.email, password: "", access: user.role }
+                : EMPTY
+        );
+        setError("");
         setVisible(true);
     };
+    const handleAdd = () => openForm();
+    const handleEdit = (id) => openForm(rows.find((u) => u.id === id));
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -94,56 +56,10 @@ function ManageUser() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!formData.access) {
-            setError("Access type is required.");
+            setError("Pick a role for this user.");
             return;
         }
-        setLoading(true);
-        setError("");
-        try {
-            if (mode === "create") {
-                dispatch(
-                    createRecord({
-                        type: "users",
-                        endPoint: userEndPoints.store,
-                        data: formData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setFormData({
-                            name: "",
-                            email: "",
-                            password: "",
-                            access: "",
-                        });
-                        myFetch();
-                        setVisible(false);
-                    }
-                });
-            } else {
-                dispatch(
-                    updateRecord({
-                        type: "users",
-                        endPoint: `${userEndPoints.update}${editId}`,
-                        data: formData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setFormData({
-                            name: "",
-                            email: "",
-                            password: "",
-                            access: "",
-                        });
-                        myFetch();
-                        setVisible(false);
-                    }
-                });
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        if (await save(editId, formData)) setVisible(false);
     };
 
     return (
@@ -160,9 +76,11 @@ function ManageUser() {
                                 type="users"
                                 identifier="id"
                                 hasImport={true}
+                                collection={rows}
                                 onFetch={myFetch}
                                 onAdd={handleAdd}
                                 onEdit={handleEdit}
+                                onDelete={remove}
                                 title="User"
                             />
                             <Dialog
@@ -264,7 +182,7 @@ function ManageUser() {
                                         </label>
                                         {!formData.access && error && (
                                             <small style={{ color: "red" }}>
-                                                Pick one of this access below.
+                                                Pick one of the roles below.
                                             </small>
                                         )}
                                         <div

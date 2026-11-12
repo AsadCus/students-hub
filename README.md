@@ -24,10 +24,11 @@ Seeded logins (local only, password `secret`): `superadmin@gmail.com`, `admin1@g
 ## Tests
 
 ```bash
-php artisan test
+php artisan test   # Laravel, on in-memory SQLite (see phpunit.xml), never your MySQL
+npm test           # frontend unit tests (Vitest), e.g. resources/js/components/store/__tests__
 ```
 
-Tests run on in-memory SQLite (see `phpunit.xml`), never on your MySQL database. CI runs the build and the test suite on every push to `develop` and `main`, and on every pull request into them.
+CI runs the frontend tests, the build and the Laravel suite on every push to `develop` and `main`, and on every pull request into them.
 
 ## Branches and releases
 

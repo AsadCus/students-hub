@@ -1,11 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { useIsAuthenticated } from "react-auth-kit";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -14,102 +10,42 @@ import { FloatLabel } from "primereact/floatlabel";
 import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 
+const EMPTY = { name: "", description: "" };
+
 function ManageActivity() {
-    const dispatch = useDispatch();
+    const isAuthenticated = useIsAuthenticated();
+    const { data: records = [], refetch } = useListQuery({ type: "activities" });
+    const { save, remove, saving, error, setError } = useSaveRecord("activities");
     const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
-    const [formData, setFormData] = useState({
-        name: "",
-        description: "",
-    });
-    const [loading, setLoading] = useState(false);
-    const [loadingActivities, setLoadingActivities] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        activities: { data: activities = [], endPoints: activityEndPoints },
-    } = useSelector((state) => state.global);
+    const [formData, setFormData] = useState(EMPTY);
+    const set = (name, value) => setFormData((prev) => ({ ...prev, [name]: value }));
 
-    const myFetch = () => {
-        dispatch(
-            getRecords({
-                type: "activities",
-                endPoint: activityEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingActivities(false));
-    };
+    const rows = useMemo(
+        () =>
+            records.map((r) => (({
+                id: r.id,
+                name: r.name,
+                description: r.description,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            }))),
+        [records]
+    );
 
-    useEffect(() => {
-        myFetch();
-    }, [dispatch]);
-
-    const handleEdit = (id) => {
-        const activity = activities.find((u) => u.id === id);
-        if (activity) {
-            setFormData({
-                name: activity.name,
-                description: activity.description,
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({ name: "", description: "" });
+    const openForm = (record = null) => {
+        setEditId(record?.id ?? null);
+        setFormData(record ? { name: record.name, description: record.description ?? "" } : EMPTY);
+        setError("");
         setVisible(true);
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            if (mode === "create") {
-                dispatch(
-                    createRecord({
-                        type: "activities",
-                        endPoint: activityEndPoints.store,
-                        data: formData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setFormData({ name: "", description: "" });
-                        myFetch();
-                        setVisible(false);
-                    }
-                });
-            } else {
-                dispatch(
-                    updateRecord({
-                        type: "activities",
-                        endPoint: `${activityEndPoints.update}${editId}`,
-                        data: formData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setFormData({ name: "", description: "" });
-                        myFetch();
-                        setVisible(false);
-                    }
-                });
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        if (await save(editId, formData)) setVisible(false);
     };
 
-    const isDataReady = !loadingActivities;
+    const tooltip = { position: "bottom", mouseTrack: true, mouseTrackTop: 15 };
 
     return (
         <div>
@@ -119,53 +55,42 @@ function ManageActivity() {
                 style={{ padding: "20px" }}
             >
                 <Card>
-                    {isDataReady ? (
+                    {isAuthenticated() ? (
                         <>
                             <DataTable
                                 type="activities"
                                 identifier="id"
                                 hasImport={true}
-                                onFetch={myFetch}
-                                onAdd={handleAdd}
-                                onEdit={handleEdit}
+                                collection={rows}
+                                onFetch={refetch}
+                                onAdd={() => openForm()}
+                                onEdit={(id) => openForm(records.find((r) => r.id === id))}
+                                onDelete={remove}
                                 title="Activity"
                             />
                             <Dialog
-                                header={
-                                    mode === "create"
-                                        ? `Add Activity`
-                                        : `Edit Activity`
-                                }
+                                header={editId ? "Edit Activity" : "Add Activity"}
                                 visible={visible}
                                 style={{ width: "400px" }}
                                 onHide={() => setVisible(false)}
                             >
                                 <form onSubmit={handleSubmit} className="mt-8">
                                     {error && (
-                                        <p
-                                            style={{
-                                                color: "red",
-                                                marginBottom: "2rem",
-                                            }}
-                                        >
+                                        <p style={{ color: "red", marginBottom: "2rem" }}>
                                             {error}
                                         </p>
                                     )}
                                     <div style={{ marginBottom: "2rem" }}>
                                         <FloatLabel>
                                             <InputText
-                                                name="name"
-                                                value={formData.name}
-                                                onChange={handleChange}
+                                                id="name"
+                                                value={formData.name ?? ""}
+                                                onChange={(e) => set("name", e.target.value)}
                                                 style={{ width: "100%" }}
                                                 required
-                                                disabled={loading}
+                                                disabled={saving}
                                                 tooltip="Enter activity name"
-                                                tooltipOptions={{
-                                                    position: "bottom",
-                                                    mouseTrack: true,
-                                                    mouseTrackTop: 15,
-                                                }}
+                                                tooltipOptions={tooltip}
                                             />
                                             <label htmlFor="name">Name</label>
                                         </FloatLabel>
@@ -173,22 +98,15 @@ function ManageActivity() {
                                     <div style={{ marginBottom: "2rem" }}>
                                         <FloatLabel>
                                             <InputText
-                                                name="description"
-                                                value={formData.description}
-                                                onChange={handleChange}
+                                                id="description"
+                                                value={formData.description ?? ""}
+                                                onChange={(e) => set("description", e.target.value)}
                                                 style={{ width: "100%" }}
-                                                required
-                                                disabled={loading}
+                                                disabled={saving}
                                                 tooltip="Enter activity description"
-                                                tooltipOptions={{
-                                                    position: "bottom",
-                                                    mouseTrack: true,
-                                                    mouseTrackTop: 15,
-                                                }}
+                                                tooltipOptions={tooltip}
                                             />
-                                            <label htmlFor="description">
-                                                Description
-                                            </label>
+                                            <label htmlFor="description">Description</label>
                                         </FloatLabel>
                                     </div>
                                     <div
@@ -204,17 +122,13 @@ function ManageActivity() {
                                             type="button"
                                             onClick={() => setVisible(false)}
                                             className="p-button-text"
-                                            disabled={loading}
+                                            disabled={saving}
                                         />
                                         <Button
-                                            label={
-                                                mode === "create"
-                                                    ? "Create"
-                                                    : "Update"
-                                            }
+                                            label={editId ? "Update" : "Create"}
                                             icon="pi pi-check"
                                             type="submit"
-                                            disabled={loading}
+                                            disabled={saving}
                                             autoFocus
                                         />
                                     </div>
@@ -222,7 +136,7 @@ function ManageActivity() {
                             </Dialog>
                         </>
                     ) : (
-                        <p>Please wait.</p>
+                        <p>Please log in to view and manage activities.</p>
                     )}
                 </Card>
             </main>
