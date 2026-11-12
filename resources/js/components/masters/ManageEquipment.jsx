@@ -1,12 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    deleteRecord,
-    setStateData,
-} from "../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -29,140 +23,71 @@ const EMPTY_EQUIPMENT = {
 
 /** CCAs, each expanding to the equipment it lends out. Same layout as Facilities. */
 function ManageEquipment() {
-    const dispatch = useDispatch();
+    const { data: ccaList = [], isLoading: loadingCcas, refetch } = useListQuery({ type: "ccas" });
+    const { data: equipment = [], isLoading: loadingEquipment } = useListQuery({ type: "equipment" });
+    const ccaRecords = useSaveRecord("ccas");
+    const equipmentRecords = useSaveRecord("equipment");
     const [dialog, setDialog] = useState(null); // "cca" | "equipment" | null
     const [editId, setEditId] = useState(null);
     const [ccaForm, setCcaForm] = useState(EMPTY_CCA);
     const [equipmentForm, setEquipmentForm] = useState(EMPTY_EQUIPMENT);
-    const [loading, setLoading] = useState(false);
-    const [loadingData, setLoadingData] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        ccas: { data: ccas = [], endPoints: ccaEndPoints },
-        equipment: { data: equipment = [], endPoints: equipmentEndPoints },
-    } = useSelector((state) => state.global);
+    const loadingData = loadingCcas || loadingEquipment;
+    const loading = ccaRecords.saving || equipmentRecords.saving;
+    const error = dialog === "cca" ? ccaRecords.error : equipmentRecords.error;
 
-    const myFetch = () => {
-        Promise.all([
-            dispatch(
-                getRecords({
-                    type: "ccas",
-                    endPoint: ccaEndPoints.collection,
-                })
-            ),
-            dispatch(
-                getRecords({
-                    type: "equipment",
-                    endPoint: equipmentEndPoints.collection,
-                })
-            ),
-        ])
-            .then(([ccaRows, equipmentRows]) => {
-                dispatch(
-                    setStateData({
-                        type: "ccas",
-                        key: "data",
-                        isMerge: false,
-                        data: ccaRows.map((c) => ({
-                            id: c.id,
-                            name: c.name,
-                            description: c.description,
-                            equipment: c.equipment?.length ?? 0,
-                            active: c.active ? "Yes" : "No",
-                        })),
-                    })
-                );
-                dispatch(
-                    setStateData({
-                        type: "equipment",
-                        key: "data",
-                        isMerge: false,
-                        data: equipmentRows,
-                    })
-                );
-            })
-            .finally(() => setLoadingData(false));
-    };
-
-    useEffect(() => {
-        myFetch();
-    }, [dispatch]);
+    const ccas = useMemo(
+        () =>
+            ccaList.map((c) => ({
+                id: c.id,
+                name: c.name,
+                description: c.description,
+                equipment: c.equipment?.length ?? 0,
+                active: c.active ? "Yes" : "No",
+            })),
+        [ccaList]
+    );
 
     const closeDialog = () => {
         setDialog(null);
         setEditId(null);
-        setError("");
     };
 
-    const handleAddCca = () => {
-        setCcaForm(EMPTY_CCA);
-        setEditId(null);
-        setDialog("cca");
-    };
-
-    const handleEditCca = (id) => {
-        const cca = ccas.find((c) => c.id === id);
-        if (!cca) return;
-        setCcaForm({
-            name: cca.name,
-            description: cca.description || "",
-            active: cca.active === "Yes",
-        });
-        setEditId(id);
-        setDialog("cca");
-    };
-
-    const handleAddEquipment = (ccaId) => {
-        setEquipmentForm({ ...EMPTY_EQUIPMENT, cca_id: ccaId });
-        setEditId(null);
-        setDialog("equipment");
-    };
-
-    const handleEditEquipment = (id) => {
-        const item = equipment.find((e) => e.id === id);
-        if (!item) return;
-        setEquipmentForm({
-            cca_id: item.cca_id,
-            name: item.name,
-            code: item.code || "",
-            quantity: item.quantity,
-            active: !!item.active,
-        });
-        setEditId(id);
-        setDialog("equipment");
-    };
-
-    const handleDeleteEquipment = async (id) => {
-        const deleted = await dispatch(
-            deleteRecord({
-                type: "equipment",
-                endPoint: `${equipmentEndPoints.delete}${id}`,
-                id,
-            })
+    const openCca = (cca = null) => {
+        setCcaForm(
+            cca
+                ? { name: cca.name, description: cca.description || "", active: cca.active === "Yes" }
+                : EMPTY_CCA
         );
-        if (deleted) myFetch();
+        setEditId(cca?.id ?? null);
+        ccaRecords.setError("");
+        setDialog("cca");
     };
+    const handleAddCca = () => openCca();
+    const handleEditCca = (id) => openCca(ccas.find((c) => c.id === id));
 
-    const save = async (type, endPoints, data) => {
-        setLoading(true);
-        setError("");
-        try {
-            await dispatch(
-                editId
-                    ? updateRecord({
-                          type,
-                          endPoint: `${endPoints.update}${editId}`,
-                          data,
-                      })
-                    : createRecord({ type, endPoint: endPoints.store, data })
-            );
-            closeDialog();
-            myFetch();
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+    const openEquipment = (item, ccaId = null) => {
+        setEquipmentForm(
+            item
+                ? {
+                      cca_id: item.cca_id,
+                      name: item.name,
+                      code: item.code || "",
+                      quantity: item.quantity,
+                      active: !!item.active,
+                  }
+                : { ...EMPTY_EQUIPMENT, cca_id: ccaId }
+        );
+        setEditId(item?.id ?? null);
+        equipmentRecords.setError("");
+        setDialog("equipment");
+    };
+    const handleAddEquipment = (ccaId) => openEquipment(null, ccaId);
+    const handleEditEquipment = (id) => openEquipment(equipment.find((e) => e.id === id));
+    const handleDeleteEquipment = (id) => equipmentRecords.remove(id);
+
+    const submit = (records, form) => async (e) => {
+        e.preventDefault();
+        if (await records.save(editId, form)) closeDialog();
     };
 
     const ccaOptions = ccas.map((c) => ({ label: c.name, value: c.id }));
@@ -202,9 +127,11 @@ function ManageEquipment() {
                                 type="ccas"
                                 identifier="id"
                                 hasExpand={true}
-                                onFetch={myFetch}
+                                collection={ccas}
+                                onFetch={refetch}
                                 onAdd={handleAddCca}
                                 onEdit={handleEditCca}
+                                onDelete={ccaRecords.remove}
                                 onAddEquipment={handleAddEquipment}
                                 onEditEquipment={handleEditEquipment}
                                 onDeleteEquipment={handleDeleteEquipment}
@@ -218,13 +145,7 @@ function ManageEquipment() {
                                 style={{ width: "400px" }}
                                 onHide={closeDialog}
                             >
-                                <form
-                                    className="mt-8"
-                                    onSubmit={(e) => {
-                                        e.preventDefault();
-                                        save("ccas", ccaEndPoints, ccaForm);
-                                    }}
-                                >
+                                <form className="mt-8" onSubmit={submit(ccaRecords, ccaForm)}>
                                     {error && (
                                         <p style={{ color: "red", marginBottom: "2rem" }}>
                                             {error}
@@ -278,13 +199,7 @@ function ManageEquipment() {
                                 style={{ width: "400px" }}
                                 onHide={closeDialog}
                             >
-                                <form
-                                    className="mt-8"
-                                    onSubmit={(e) => {
-                                        e.preventDefault();
-                                        save("equipment", equipmentEndPoints, equipmentForm);
-                                    }}
-                                >
+                                <form className="mt-8" onSubmit={submit(equipmentRecords, equipmentForm)}>
                                     {error && (
                                         <p style={{ color: "red", marginBottom: "2rem" }}>
                                             {error}

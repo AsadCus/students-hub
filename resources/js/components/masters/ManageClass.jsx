@@ -1,12 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import { useIsAuthenticated } from "react-auth-kit";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../store/global-slice";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -16,135 +11,46 @@ import { InputText } from "primereact/inputtext";
 import { Dropdown } from "primereact/dropdown";
 import { Button } from "primereact/button";
 
+const EMPTY = { level_id: null, name: "" };
+
 function ManageClass() {
-    const dispatch = useDispatch();
     const isAuthenticated = useIsAuthenticated();
+    const { data: records = [], refetch } = useListQuery({ type: "class" });
+    const { data: levels = [] } = useListQuery({ type: "levels" });
+    const { save, remove, saving, error, setError } = useSaveRecord("class");
     const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
-    const [formData, setFormData] = useState({
-        level: "",
-        name: "",
-    });
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const {
-        class: { data: classes = [], endPoints: classEndPoints },
-        levels: { data: levels = [], endPoints: levelEndPoints },
-    } = useSelector((state) => state.global);
+    const [formData, setFormData] = useState(EMPTY);
+    const set = (name, value) => setFormData((prev) => ({ ...prev, [name]: value }));
 
-    const myFetch = () => {
-        dispatch(
-            getRecords({
-                type: "class",
-                endPoint: classEndPoints.collection,
-            })
-        ).then((d) => {
-            if (d) {
-                const formattedClasses = d.map((i) => ({
-                    id: i.id,
-                    level: i.level?.name || "N/A",
-                    name: i.name,
-                    level_id: i.level_id,
-                    created_at: i.created_at,
-                    updated_at: i.updated_at,
-                }));
-                dispatch(
-                    setStateData({
-                        type: "class",
-                        data: formattedClasses,
-                        key: "data",
-                        isMerge: false,
-                    })
-                );
-            }
-        });
-    };
+    const rows = useMemo(
+        () =>
+            records.map((r) => (({
+                id: r.id,
+                level: r.level?.name || "N/A",
+                name: r.name,
+                level_id: r.level_id,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            }))),
+        [records]
+    );
 
-    useEffect(() => {
-        myFetch();
-        dispatch(
-            getRecords({
-                type: "levels",
-                endPoint: levelEndPoints.collection,
-                key: "data",
-            })
-        );
-    }, [dispatch]);
+    const levelOptions = levels.map((l) => ({ label: l.name, value: l.id }));
 
-    const handleEdit = (id) => {
-        const iClass = classes.find((u) => u.id === id);
-        if (iClass) {
-            setFormData({
-                level: levelOptions.find((u) => u.id === iClass.level_id),
-                name: iClass.name,
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({ level: "", name: "" });
+    const openForm = (record = null) => {
+        setEditId(record?.id ?? null);
+        setFormData(record ? { level_id: record.level_id, name: record.name } : EMPTY);
+        setError("");
         setVisible(true);
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target ? e.target : e;
-        setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            if (mode === "create") {
-                const success = await dispatch(
-                    createRecord({
-                        type: "class",
-                        endPoint: classEndPoints.store,
-                        data: {
-                            level_id: formData.level.id,
-                            name: formData.name,
-                        },
-                    })
-                );
-                if (success) {
-                    setFormData({ level: "", name: "" });
-                    setVisible(false);
-                    myFetch();
-                }
-            } else {
-                const success = await dispatch(
-                    updateRecord({
-                        type: "class",
-                        endPoint: `${classEndPoints.update}${editId}`,
-                        data: {
-                            level_id: formData.level.id,
-                            name: formData.name,
-                        },
-                    })
-                );
-                if (success) {
-                    setFormData({ level: "", name: "" });
-                    setVisible(false);
-                    myFetch();
-                }
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        if (await save(editId, formData)) setVisible(false);
     };
 
-    const levelOptions = levels.map((level) => ({
-        id: level.id,
-        label: level.name,
-    }));
+    const tooltip = { position: "bottom", mouseTrack: true, mouseTrackTop: 15 };
 
     return (
         <div>
@@ -160,70 +66,55 @@ function ManageClass() {
                                 type="class"
                                 identifier="id"
                                 hasImport={true}
-                                onFetch={myFetch}
-                                onAdd={handleAdd}
-                                onEdit={handleEdit}
+                                collection={rows}
+                                onFetch={refetch}
+                                onAdd={() => openForm()}
+                                onEdit={(id) => openForm(records.find((r) => r.id === id))}
+                                onDelete={remove}
                                 title="Class"
                             />
                             <Dialog
-                                header={
-                                    mode === "create"
-                                        ? `Add Class`
-                                        : `Edit Class`
-                                }
+                                header={editId ? "Edit Class" : "Add Class"}
                                 visible={visible}
                                 style={{ width: "400px" }}
                                 onHide={() => setVisible(false)}
                             >
                                 <form onSubmit={handleSubmit} className="mt-8">
                                     {error && (
-                                        <p
-                                            style={{
-                                                color: "red",
-                                                marginBottom: "2rem",
-                                            }}
-                                        >
+                                        <p style={{ color: "red", marginBottom: "2rem" }}>
                                             {error}
                                         </p>
                                     )}
                                     <div style={{ marginBottom: "2rem" }}>
                                         <FloatLabel>
                                             <Dropdown
-                                                name="level"
-                                                value={formData.level}
+                                                inputId="level_id"
+                                                value={formData.level_id}
                                                 options={levelOptions}
-                                                onChange={handleChange}
+                                                onChange={(e) => set("level_id", e.value)}
                                                 filter
                                                 style={{ width: "100%" }}
                                                 required
                                                 checkmark={true}
-                                                disabled={loading}
+                                                disabled={saving}
                                                 placeholder="Select a level"
                                                 tooltip="Select class level"
-                                                tooltipOptions={{
-                                                    position: "bottom",
-                                                    mouseTrack: true,
-                                                    mouseTrackTop: 15,
-                                                }}
+                                                tooltipOptions={tooltip}
                                             />
-                                            <label htmlFor="level">Level</label>
+                                            <label htmlFor="level_id">Level</label>
                                         </FloatLabel>
                                     </div>
                                     <div style={{ marginBottom: "2rem" }}>
                                         <FloatLabel>
                                             <InputText
-                                                name="name"
-                                                value={formData.name}
-                                                onChange={handleChange}
+                                                id="name"
+                                                value={formData.name ?? ""}
+                                                onChange={(e) => set("name", e.target.value)}
                                                 style={{ width: "100%" }}
                                                 required
-                                                disabled={loading}
+                                                disabled={saving}
                                                 tooltip="Enter class name"
-                                                tooltipOptions={{
-                                                    position: "bottom",
-                                                    mouseTrack: true,
-                                                    mouseTrackTop: 15,
-                                                }}
+                                                tooltipOptions={tooltip}
                                             />
                                             <label htmlFor="name">Name</label>
                                         </FloatLabel>
@@ -241,17 +132,13 @@ function ManageClass() {
                                             type="button"
                                             onClick={() => setVisible(false)}
                                             className="p-button-text"
-                                            disabled={loading}
+                                            disabled={saving}
                                         />
                                         <Button
-                                            label={
-                                                mode === "create"
-                                                    ? "Create"
-                                                    : "Update"
-                                            }
+                                            label={editId ? "Update" : "Create"}
                                             icon="pi pi-check"
                                             type="submit"
-                                            disabled={loading}
+                                            disabled={saving}
                                             autoFocus
                                         />
                                     </div>
@@ -259,7 +146,7 @@ function ManageClass() {
                             </Dialog>
                         </>
                     ) : (
-                        <p>Please log in to view and manage class.</p>
+                        <p>Please log in to view and manage classes.</p>
                     )}
                 </Card>
             </main>
