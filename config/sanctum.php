@@ -46,7 +46,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Staff tokens last one school day; the kiosk needs no token.
+    'expiration' => 60 * 12,
 
     /*
     |--------------------------------------------------------------------------
