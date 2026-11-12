@@ -42,16 +42,18 @@ import ManageLevelClassStudent from "./components/masters/ManageLevelClassStuden
 import ManageEquipment from "./components/masters/ManageEquipment";
 import EquipmentLoans from "./components/masters/reports/EquipmentLoans";
 
-const PrivateRoute = ({ element, permission, loginRequired }) => {
+// Kiosk pages pass the "login required" setting; admin pages leave it at the
+// default (true), so they always need a login and the route's permission.
+const PrivateRoute = ({ element, permission, loginRequired = true }) => {
     const auth = useAuthUser();
     const permissions = auth()?.permissions || [];
 
-    if (loginRequired && !auth()) {
-        return <Navigate to="/login" replace />;
-    }
-
     if (!loginRequired) {
         return element;
+    }
+
+    if (!auth()) {
+        return <Navigate to="/login" replace />;
     }
 
     if (permission) {
@@ -241,7 +243,6 @@ const AppWrapper = () => {
                             <PrivateRoute
                                 element={element}
                                 permission={permission}
-                                loginRequired={loginRequired}
                             />
                         }
                     />
