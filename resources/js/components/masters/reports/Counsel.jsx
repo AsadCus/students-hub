@@ -1,146 +1,55 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { getRecords, setStateData } from "../../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { DateTime } from "luxon";
+import { useListQuery } from "../../store/hub-api";
+import { reportParams } from "../../utils/report-filters";
 import Header from "../../shared/layout/Header";
 import DataTable from "../../shared/misc/DataTable";
 import { Card } from "primereact/card";
-import { DateTime } from "luxon";
 
+/** Counsel records ("Ask Ms Vi" answers) grouped by day. */
 function Counsel() {
-    const dispatch = useDispatch();
-    const [userTimezone, setUserTimezone] = useState(null);
     const [timeFilter, setTimeFilter] = useState("month");
     const [dateFilter, setDateFilter] = useState(null);
     const [rangeFilter, setRangeFilter] = useState(null);
-    const [loadingData, setLoadingData] = useState(true);
-    const [loadingSupportStrategies, setLoadingSupportStrategies] =
-        useState(true);
-    const {
-        counsels: { data: rawCounsels = [], endPoints: counselEndPoints },
-        support_strategies: {
-            data: supportStrategies = [],
-            endPoints: strategyEndPoints,
-        },
-    } = useSelector((state) => state.global);
 
-    const counsels = Array.isArray(rawCounsels)
-        ? rawCounsels
-        : rawCounsels && typeof rawCounsels === "object"
-        ? Object.values(rawCounsels).filter(
-              (item) => typeof item === "object" && item.id
-          )
-        : [];
+    // Changing a filter changes the query, which refetches on its own.
+    const counselQuery = useListQuery({
+        type: "counsels",
+        params: reportParams({ timeFilter, dateFilter, rangeFilter }),
+    });
+    const strategyQuery = useListQuery({ type: "support_strategies" });
 
-    const myFetch = (params = { timeFilter }) => {
-        let currentDateFilter =
-            params?.dateFilter !== undefined ? params.dateFilter : dateFilter;
-        let currentFilter =
-            params?.timeFilter !== undefined ? params.timeFilter : timeFilter;
-        let currentRange =
-            params?.rangeFilter !== undefined
-                ? params.rangeFilter
-                : rangeFilter;
-
-        let url = counselEndPoints.collection;
-        if (currentFilter) {
-            url += `?time=${currentFilter}`;
-        }
-        if (currentRange) {
-            if (currentRange[0] && currentRange[1]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[1]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            } else if (currentRange[0]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[0]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            }
-        }
-        if (currentDateFilter) {
-            const start = currentDateFilter.toISOString();
-            const endDate = new Date(currentDateFilter);
-            endDate.setUTCDate(endDate.getUTCDate() + 1);
-            const end = endDate.toISOString();
-            url += `?range_time[start]=${start}&range_time[end]=${end}`;
-        }
-        dispatch(getRecords({ type: "counsels", endPoint: url }))
-            .then((d) => {
-                if (d) {
-                    const formattedCounsels = d.map((i) => ({
-                        id: i.id,
-                        level: i.student?.class?.level?.name || "N/A",
-                        class: i.student?.class?.name || "N/A",
-                        student: i.student?.name || "N/A",
-                        support_strategies: [
-                            ...new Set(
-                                i.answers.map(
-                                    (a) => a.question.support_strategy.name
-                                )
-                            ),
-                        ].join(", "),
-                        answers: i.answers,
-                        created_at: i.created_at,
-                        updated_at: i.updated_at,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "counsels",
-                            data: formattedCounsels,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingData(false));
-    };
-
-    useEffect(() => {
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        setUserTimezone(timezone);
-    }, []);
-
-    useEffect(() => {
-        dispatch(
-            getRecords({
-                type: "support_strategies",
-                endPoint: strategyEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingSupportStrategies(false));
-        myFetch();
-    }, [dispatch]);
-
-    const groupCounselsByDate = (counsels) => {
-        const grouped = counsels.reduce((acc, counsel) => {
+    const groupedCounsels = useMemo(() => {
+        const counsels = (counselQuery.data ?? []).map((c) => ({
+            id: c.id,
+            level: c.student?.class?.level?.name || "N/A",
+            class: c.student?.class?.name || "N/A",
+            student: c.student?.name || "N/A",
+            support_strategies: [
+                ...new Set(c.answers.map((a) => a.question.support_strategy.name)),
+            ].join(", "),
+            answers: c.answers,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        }));
+        const byDay = counsels.reduce((acc, counsel) => {
             const date = DateTime.fromISO(counsel.created_at, { zone: "utc" })
                 .setZone("local")
                 .toFormat("yyyy-MM-dd");
-            if (!acc[date]) {
-                acc[date] = [];
-            }
-            acc[date].push(counsel);
+            (acc[date] ??= []).push(counsel);
             return acc;
         }, {});
-        return Object.entries(grouped)
-            .map(([date, counsels]) => ({
+        return Object.entries(byDay)
+            .map(([date, dayCounsels]) => ({
                 date,
                 formattedDate: DateTime.fromISO(date).toFormat("dd MMMM yyyy"),
-                counsels,
-                counselCount: counsels.length,
+                counsels: dayCounsels,
+                counselCount: dayCounsels.length,
             }))
-            .sort(
-                (a, b) => DateTime.fromISO(b.date) - DateTime.fromISO(a.date)
-            );
-    };
+            .sort((a, b) => DateTime.fromISO(b.date) - DateTime.fromISO(a.date));
+    }, [counselQuery.data]);
 
-    const groupedCounsels = groupCounselsByDate(counsels);
-
-    const isDataReady = !loadingData && !loadingSupportStrategies;
+    const isDataReady = !counselQuery.isLoading && !strategyQuery.isLoading;
 
     return (
         <div>
@@ -154,7 +63,7 @@ function Counsel() {
                         <DataTable
                             type="counsels"
                             identifier="date"
-                            onFetch={(params) => myFetch(params)}
+                            onFetch={() => {}} // filters drive the query
                             title="Counsel"
                             timeFilter={timeFilter}
                             setTimeFilter={setTimeFilter}
@@ -164,7 +73,7 @@ function Counsel() {
                             setRangeFilter={setRangeFilter}
                             hasExpand={true}
                             collection={groupedCounsels}
-                            supportStrategies={supportStrategies}
+                            supportStrategies={strategyQuery.data ?? []}
                             isGrouped={true}
                         />
                     ) : (

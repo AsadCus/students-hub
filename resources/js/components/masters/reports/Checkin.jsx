@@ -1,11 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { useListQuery } from "../../store/hub-api";
+import { useSaveRecord } from "../../store/use-save-record";
+import { reportParams } from "../../utils/report-filters";
 import Header from "../../shared/layout/Header";
 import DataTable from "../../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -17,194 +13,84 @@ import { Calendar } from "primereact/calendar";
 import { InputText } from "primereact/inputtext";
 import { Checkbox } from "primereact/checkbox";
 
+const EMPTY = {
+    level: null,
+    class: null,
+    student: null,
+    activity: null,
+    checkin_time: null,
+    checkout_time: null,
+    hasReason: false,
+    reason: "",
+};
+
+const option = (record) => (record ? { id: record.id, label: record.name } : null);
+
+/** Check-in times are stored in UTC as "YYYY-MM-DD HH:mm:ss". */
+const formatDateTimeForMySQL = (date) =>
+    date ? date.toISOString().slice(0, 19).replace("T", " ") : null;
+
 function Checkin() {
-    const dispatch = useDispatch();
-    const [visible, setVisible] = useState(false);
-    const [mode, setMode] = useState("create");
-    const [editId, setEditId] = useState(null);
-    const [rawCheckin, setRawCheckin] = useState([]);
-    const [formData, setFormData] = useState({
-        level: null,
-        class: null,
-        student: null,
-        activity: null,
-        checkin_time: null,
-        checkout_time: null,
-        hasReason: false,
-        reason: "",
-    });
-    const [loading, setLoading] = useState(false);
-    const [loadingData, setLoadingData] = useState(true);
-    const [loadingLevels, setLoadingLevels] = useState(true);
-    const [loadingClass, setLoadingClass] = useState(true);
-    const [loadingStudent, setLoadingStudent] = useState(true);
-    const [loadingActivities, setLoadingActivities] = useState(true);
-    const [error, setError] = useState("");
     const [timeFilter, setTimeFilter] = useState("today");
     const [dateFilter, setDateFilter] = useState(null);
     const [rangeFilter, setRangeFilter] = useState(null);
-    const {
-        checkin: { data: checkin = [], endPoints: checkinEndPoints },
-        levels: { data: levels = [], endPoints: levelEndPoints },
-        class: { data: classes = [], endPoints: classEndPoints },
-        students: { data: students = [], endPoints: studentEndPoints },
-        activities: { data: activities = [], endPoints: activityEndPoints },
-    } = useSelector((state) => state.global);
+    const [visible, setVisible] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [formData, setFormData] = useState(EMPTY);
 
-    const myFetch = (params = {}) => {
-        let currentDateFilter =
-            params?.dateFilter !== undefined ? params.dateFilter : dateFilter;
-        let currentFilter =
-            params?.timeFilter !== undefined ? params.timeFilter : timeFilter;
-        let currentRange =
-            params?.rangeFilter !== undefined
-                ? params.rangeFilter
-                : rangeFilter;
+    // Changing a filter changes the query, which refetches on its own.
+    const checkinQuery = useListQuery({
+        type: "checkin",
+        params: reportParams({ timeFilter, dateFilter, rangeFilter }),
+    });
+    const levelQuery = useListQuery({ type: "levels" });
+    const classQuery = useListQuery({ type: "class" });
+    const studentQuery = useListQuery({ type: "students" });
+    const activityQuery = useListQuery({ type: "activities" });
+    const { save, remove, removeMany, saving: loading, error, setError } =
+        useSaveRecord("checkin");
 
-        let url = checkinEndPoints.collection;
-        if (currentFilter) {
-            url += `?time=${currentFilter}`;
-        }
-        if (currentRange) {
-            if (currentRange[0] && currentRange[1]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[1]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            } else if (rangeFilter[0]) {
-                const start = currentRange[0].toISOString();
-                const endDate = new Date(currentRange[0]);
-                endDate.setUTCDate(endDate.getUTCDate() + 1);
-                const end = endDate.toISOString();
-                url += `?range_time[start]=${start}&range_time[end]=${end}`;
-            }
-        }
-        if (currentDateFilter) {
-            const start = currentDateFilter.toISOString();
-            const endDate = new Date(currentDateFilter);
-            endDate.setUTCDate(endDate.getUTCDate() + 1);
-            const end = endDate.toISOString();
-            url += `?range_time[start]=${start}&range_time[end]=${end}`;
-        }
+    const checkins = checkinQuery.data ?? [];
+    const levels = levelQuery.data ?? [];
+    const classes = classQuery.data ?? [];
+    const students = studentQuery.data ?? [];
+    const activities = activityQuery.data ?? [];
 
-        dispatch(getRecords({ type: "checkin", endPoint: url }))
-            .then((d) => {
-                setRawCheckin(d);
-                if (d) {
-                    const formattedCheckin = d.map((i) => ({
-                        id: i.id,
-                        student: i.student?.name || "N/A",
-                        level: i.student?.class?.level?.name || "N/A",
-                        class: i.student?.class?.name || "N/A",
-                        activity: i.activity?.name || i.other_activity || "N/A",
-                        checkin_time: i.checkin_time,
-                        checkout_time: i.checkout_time,
-                        reason: i.reason,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "checkin",
-                            data: formattedCheckin,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingData(false));
-    };
+    const rows = useMemo(
+        () =>
+            checkins.map((i) => ({
+                id: i.id,
+                student: i.student?.name || "N/A",
+                level: i.student?.class?.level?.name || "N/A",
+                class: i.student?.class?.name || "N/A",
+                activity: i.activity?.name || i.other_activity || "N/A",
+                checkin_time: i.checkin_time,
+                checkout_time: i.checkout_time,
+                reason: i.reason,
+            })),
+        [checkins]
+    );
 
-    useEffect(() => {
-        myFetch();
-        dispatch(
-            getRecords({
-                type: "levels",
-                endPoint: levelEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingLevels(false));
-        dispatch(
-            getRecords({
-                type: "class",
-                endPoint: classEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingClass(false));
-        dispatch(
-            getRecords({
-                type: "students",
-                endPoint: studentEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingStudent(false));
-        dispatch(
-            getRecords({
-                type: "activities",
-                endPoint: activityEndPoints.collection,
-                key: "data",
-            })
-        ).finally(() => setLoadingActivities(false));
-    }, [dispatch]);
-
-    const handleEdit = (id) => {
-        const iCheckin = rawCheckin.find((u) => u.id === id);
-        if (iCheckin) {
-            const studentData = students.find(
-                (s) => s.id === iCheckin.student.id
-            );
-            const classData = classes.find(
-                (c) => c.id === iCheckin.student.class.id
-            );
-            const levelData = levels.find(
-                (l) => l.id === iCheckin.student.class.level.id
-            );
-            const activityData = activities.find(
-                (a) => a.id === iCheckin.activity_id
-            );
-
-            setFormData({
-                level: levelData
-                    ? { id: levelData.id, label: levelData.name }
-                    : null,
-                class: classData
-                    ? { id: classData.id, label: classData.name }
-                    : null,
-                student: studentData
-                    ? { id: studentData.id, label: studentData.name }
-                    : null,
-                activity: activityData
-                    ? { id: activityData.id, label: activityData.name }
-                    : iCheckin.activity !== "N/A"
-                    ? iCheckin.activity
-                    : null,
-                checkin_time: iCheckin.checkin_time
-                    ? new Date(iCheckin.checkin_time)
-                    : null,
-                checkout_time: iCheckin.checkout_time
-                    ? new Date(iCheckin.checkout_time)
-                    : null,
-                hasReason: !!iCheckin.reason,
-                reason: iCheckin.reason || "",
-            });
-            setEditId(id);
-            setMode("edit");
-            setVisible(true);
-        }
-    };
-
-    const handleAdd = () => {
-        setMode("create");
-        setFormData({
-            level: null,
-            class: null,
-            student: null,
-            activity: null,
-            checkin_time: null,
-            checkout_time: null,
-            hasReason: false,
-            reason: "",
-        });
+    const openForm = (checkin = null) => {
+        setEditId(checkin?.id ?? null);
+        setFormData(
+            checkin
+                ? {
+                      level: option(levels.find((l) => l.id === checkin.student?.class?.level?.id)),
+                      class: option(classes.find((c) => c.id === checkin.student?.class?.id)),
+                      student: option(students.find((s) => s.id === checkin.student?.id)),
+                      activity:
+                          option(activities.find((a) => a.id === checkin.activity_id)) ??
+                          checkin.other_activity ??
+                          null,
+                      checkin_time: checkin.checkin_time ? new Date(checkin.checkin_time) : null,
+                      checkout_time: checkin.checkout_time ? new Date(checkin.checkout_time) : null,
+                      hasReason: !!checkin.reason,
+                      reason: checkin.reason || "",
+                  }
+                : EMPTY
+        );
+        setError("");
         setVisible(true);
     };
 
@@ -222,96 +108,34 @@ function Checkin() {
         });
     };
 
-    const formatDateTimeForMySQL = (date) => {
-        if (!date) return null;
-        const pad = (n) => String(n).padStart(2, "0");
-        const year = date.getUTCFullYear();
-        const month = pad(date.getUTCMonth() + 1);
-        const day = pad(date.getUTCDate());
-        const hours = pad(date.getUTCHours());
-        const minutes = pad(date.getUTCMinutes());
-        const seconds = pad(date.getUTCSeconds());
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-
         const isCustomActivity =
             typeof formData.activity === "string" || !formData.activity?.id;
-        const dataToSubmit = {
+        const saved = await save(editId, {
             student_id: formData.student?.id,
             activity_id: isCustomActivity ? null : formData.activity?.id,
             other_activity:
-                isCustomActivity && formData.activity
-                    ? formData.activity
-                    : null,
+                isCustomActivity && formData.activity ? formData.activity : null,
             checkin_time: formatDateTimeForMySQL(formData.checkin_time),
             checkout_time: formatDateTimeForMySQL(formData.checkout_time),
             reason: formData.hasReason ? formData.reason : null,
-        };
-
-        try {
-            if (mode === "create") {
-                dispatch(
-                    createRecord({
-                        type: "checkin",
-                        endPoint: checkinEndPoints.store,
-                        data: dataToSubmit,
-                        returnData: true,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setVisible(false);
-                        myFetch();
-                    }
-                });
-            } else {
-                dispatch(
-                    updateRecord({
-                        type: "checkin",
-                        endPoint: `${checkinEndPoints.update}${editId}`,
-                        data: dataToSubmit,
-                        returnData: true,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setVisible(false);
-                        myFetch();
-                    }
-                });
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        });
+        if (saved) setVisible(false);
     };
 
-    const levelOptions = levels.map((i) => ({ id: i.id, label: i.name }));
+    const levelOptions = levels.map(option);
     const classOptions = formData.level
-        ? classes
-              .filter((c) => c.level_id === formData.level.id)
-              .map((i) => ({ id: i.id, label: i.name }))
+        ? classes.filter((c) => c.level_id === formData.level.id).map(option)
         : [];
     const studentOptions = formData.class
-        ? students
-              .filter((s) => s.class_id === formData.class.id)
-              .map((i) => ({ id: i.id, label: i.name }))
+        ? students.filter((s) => s.class_id === formData.class.id).map(option)
         : [];
-    const activityOptions = activities.map((i) => ({
-        id: i.id,
-        label: i.name,
-    }));
+    const activityOptions = activities.map(option);
 
-    const isDataReady =
-        !loadingData &&
-        !loadingLevels &&
-        !loadingClass &&
-        !loadingStudent &&
-        !loadingActivities;
+    const isDataReady = [checkinQuery, levelQuery, classQuery, studentQuery, activityQuery].every(
+        (q) => !q.isLoading
+    );
 
     return (
         <div>
@@ -326,9 +150,12 @@ function Checkin() {
                             <DataTable
                                 type="checkin"
                                 identifier="id"
-                                onFetch={(params) => myFetch(params)}
-                                onAdd={handleAdd}
-                                onEdit={handleEdit}
+                                collection={rows}
+                                onFetch={() => {}} // filters drive the query
+                                onAdd={() => openForm()}
+                                onEdit={(id) => openForm(checkins.find((c) => c.id === id))}
+                                onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Check In"
                                 timeFilter={timeFilter}
                                 setTimeFilter={setTimeFilter}
@@ -339,9 +166,7 @@ function Checkin() {
                             />
                             <Dialog
                                 header={
-                                    mode === "create"
-                                        ? "Add Check In"
-                                        : "Edit Check In"
+editId ? "Edit Check In" : "Add Check In"
                                 }
                                 visible={visible}
                                 style={{ width: "400px" }}
@@ -528,9 +353,7 @@ function Checkin() {
                                         />
                                         <Button
                                             label={
-                                                mode === "create"
-                                                    ? "Create"
-                                                    : "Update"
+editId ? "Update" : "Create"
                                             }
                                             icon="pi pi-check"
                                             type="submit"

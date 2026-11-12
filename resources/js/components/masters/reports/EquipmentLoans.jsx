@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import React, { useMemo, useState } from "react";
 import { DateTime } from "luxon";
 import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    setStateData,
-} from "../../store/global-slice";
+    useCancelLoanMutation,
+    useConfirmLoanMutation,
+    useListQuery,
+    useRejectLoanMutation,
+    useReturnLoanMutation,
+} from "../../store/hub-api";
+import { useSaveRecord } from "../../store/use-save-record";
 import Header from "../../shared/layout/Header";
 import DataTable from "../../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -34,74 +35,52 @@ const display = (ymd) => (ymd ? DateTime.fromISO(ymd).toFormat("d LLL yyyy") : "
 
 /** Admin list of equipment loans: approve, reject, mark returned, cancel, create for a student. */
 function EquipmentLoans() {
-    const dispatch = useDispatch();
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [rangeFilter, setRangeFilter] = useState(null);
-    const [rawLoans, setRawLoans] = useState([]);
     const [formData, setFormData] = useState(EMPTY_FORM);
-    const [loading, setLoading] = useState(false);
-    const [loadingData, setLoadingData] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        equipment_loans: { endPoints: loanEndPoints },
-        levels: { data: levels = [], endPoints: levelEndPoints },
-        class: { data: classes = [], endPoints: classEndPoints },
-        students: { data: students = [], endPoints: studentEndPoints },
-        ccas: { data: ccas = [], endPoints: ccaEndPoints },
-        equipment: { data: equipment = [], endPoints: equipmentEndPoints },
-    } = useSelector((state) => state.global);
 
-    const myFetch = (params = {}) => {
-        const range =
-            params.rangeFilter !== undefined ? params.rangeFilter : rangeFilter;
-        const query = new URLSearchParams();
-        if (range?.[0]) {
-            query.set("range_time[start]", toYmd(range[0]));
-            query.set("range_time[end]", toYmd(range[1] || range[0]));
-        }
-        const url = `${loanEndPoints.collection}${query.size ? `?${query}` : ""}`;
+    // Loans are whole days, so the range goes as local dates, not instants.
+    const params = rangeFilter?.[0]
+        ? {
+              range_time: {
+                  start: toYmd(rangeFilter[0]),
+                  end: toYmd(rangeFilter[1] || rangeFilter[0]),
+              },
+          }
+        : {};
+    const loanQuery = useListQuery({ type: "equipment_loans", params });
+    const { data: levels = [] } = useListQuery({ type: "levels" });
+    const { data: classes = [] } = useListQuery({ type: "class" });
+    const { data: students = [] } = useListQuery({ type: "students" });
+    const { data: ccas = [] } = useListQuery({ type: "ccas" });
+    const { data: equipment = [] } = useListQuery({ type: "equipment" });
+    const { save, remove, removeMany, saving: loading, error, setError } =
+        useSaveRecord("equipment_loans");
+    // Toasts for these come from api-toasts.
+    const [confirmLoan] = useConfirmLoanMutation();
+    const [rejectLoan] = useRejectLoanMutation();
+    const [returnLoan] = useReturnLoanMutation();
+    const [cancelLoan] = useCancelLoanMutation();
 
-        dispatch(getRecords({ type: "equipment_loans", endPoint: url }))
-            .then((rows) => {
-                setRawLoans(rows);
-                dispatch(
-                    setStateData({
-                        type: "equipment_loans",
-                        key: "data",
-                        isMerge: false,
-                        data: rows.map((l) => ({
-                            id: l.id,
-                            student: l.student?.name || "N/A",
-                            class: l.student?.class
-                                ? `${l.student.class.level?.name} ${l.student.class.name}`
-                                : "N/A",
-                            cca: l.equipment?.cca?.name || "N/A",
-                            equipment: l.equipment?.name || "N/A",
-                            start_date: l.start_date,
-                            end_date: l.end_date,
-                            status: l.is_overdue ? "overdue" : l.status,
-                            notes: l.notes || "",
-                        })),
-                    })
-                );
-            })
-            .finally(() => setLoadingData(false));
-    };
-
-    useEffect(() => {
-        myFetch();
-        const lists = [
-            ["levels", levelEndPoints],
-            ["class", classEndPoints],
-            ["students", studentEndPoints],
-            ["ccas", ccaEndPoints],
-            ["equipment", equipmentEndPoints],
-        ];
-        lists.forEach(([type, endPoints]) =>
-            dispatch(getRecords({ type, endPoint: endPoints.collection, key: "data" }))
-        );
-    }, [dispatch]);
+    const loans = loanQuery.data ?? [];
+    const rows = useMemo(
+        () =>
+            loans.map((l) => ({
+                id: l.id,
+                student: l.student?.name || "N/A",
+                class: l.student?.class
+                    ? `${l.student.class.level?.name} ${l.student.class.name}`
+                    : "N/A",
+                cca: l.equipment?.cca?.name || "N/A",
+                equipment: l.equipment?.name || "N/A",
+                start_date: l.start_date,
+                end_date: l.end_date,
+                status: l.is_overdue ? "overdue" : l.status,
+                notes: l.notes || "",
+            })),
+        [loans]
+    );
 
     const levelOptions = levels.map((l) => ({ label: l.name, value: l.id }));
     const classOptions = useMemo(
@@ -151,7 +130,7 @@ function EquipmentLoans() {
     };
 
     const handleEdit = (id) => {
-        const loan = rawLoans.find((l) => l.id === id);
+        const loan = loans.find((l) => l.id === id);
         if (!loan) return;
         setFormData({
             level: loan.student?.class?.level_id ?? null,
@@ -169,53 +148,15 @@ function EquipmentLoans() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
         const [start, end] = formData.dates || [];
-        const data = {
+        const saved = await save(editId, {
             student_id: formData.student,
             equipment_id: formData.equipment,
             start_date: toYmd(start),
             end_date: toYmd(end || start),
             notes: formData.notes,
-        };
-        try {
-            await dispatch(
-                editId
-                    ? updateRecord({
-                          type: "equipment_loans",
-                          endPoint: `${loanEndPoints.update}${editId}`,
-                          data,
-                      })
-                    : createRecord({
-                          type: "equipment_loans",
-                          endPoint: loanEndPoints.store,
-                          data,
-                      })
-            );
-            setVisible(false);
-            myFetch();
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // approve / reject / cancel / return all hit "<endpoint><id>" and refresh.
-    const transition = (endPointKey) => async (id) => {
-        try {
-            await dispatch(
-                updateRecord({
-                    type: "equipment_loans",
-                    endPoint: `${loanEndPoints[endPointKey]}${id}`,
-                    data: {},
-                })
-            );
-            myFetch();
-        } catch {
-            // The slice already showed the error toast.
-        }
+        });
+        if (saved) setVisible(false);
     };
 
     const field = { marginBottom: "2rem" };
@@ -228,20 +169,23 @@ function EquipmentLoans() {
                 style={{ padding: "20px" }}
             >
                 <Card>
-                    {loadingData ? (
+                    {loanQuery.isLoading ? (
                         <p>Please wait.</p>
                     ) : (
                         <>
                             <DataTable
                                 type="equipment_loans"
                                 identifier="id"
-                                onFetch={(params) => myFetch(params)}
+                                collection={rows}
+                                onFetch={() => {}} // the range filter drives the query
                                 onAdd={handleAdd}
                                 onEdit={handleEdit}
-                                onConfirm={transition("confirm")}
-                                onReject={transition("reject")}
-                                onCancel={transition("cancel")}
-                                onReturn={transition("return")}
+                                onDelete={remove}
+                                onDeleteMany={removeMany}
+                                onConfirm={confirmLoan}
+                                onReject={rejectLoan}
+                                onCancel={(id) => cancelLoan({ id })}
+                                onReturn={returnLoan}
                                 title="Equipment Loans"
                                 rangeFilter={rangeFilter}
                                 setRangeFilter={setRangeFilter}
