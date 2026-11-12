@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\BlockedDate;
 use App\Models\Booking;
 use DateTime;
 use GuzzleHttp\Client;
@@ -51,7 +52,15 @@ class BookingController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Cek booking yang tumpang tindih
+        $blocked = BlockedDate::firstBetween($request->start_time, $request->end_time);
+        if ($blocked) {
+            return response()->json([
+                'status' => false,
+                'message' => $blocked->bookingClosedMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Overlapping bookings for the same facility
         $existingBooking = Booking::where('facility_id', $request->facility_id)
             ->where('status', '!=', 'cancelled')
             ->where(function ($q) use ($request) {

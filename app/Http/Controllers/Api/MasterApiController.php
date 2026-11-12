@@ -214,6 +214,9 @@ class MasterApiController extends Controller
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
+        if ($type === 'bookings' && ($blocked = BlockedDate::firstBetween($request->start_time, $request->end_time))) {
+            return response()->json(['status' => false, 'message' => $blocked->bookingClosedMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
         if ($type === 'blocked_dates') {
             $data = $request->all();
             $exists = $this->blockedDate->where('date', $request->date)->exists();
@@ -285,6 +288,9 @@ class MasterApiController extends Controller
                     'message' => 'Failed to update question: '.$e->getMessage(),
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
+        }
+        if ($type === 'bookings' && ($blocked = BlockedDate::firstBetween($request->start_time, $request->end_time))) {
+            return response()->json(['status' => false, 'message' => $blocked->bookingClosedMessage()], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
         if ($type === 'equipment_loans') {
             $loan = app(EquipmentLoanService::class)->update(
