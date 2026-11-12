@@ -21,3 +21,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# AI tooling: personal, not shared
+/graphify-out/
+/.claude/settings.local.json
