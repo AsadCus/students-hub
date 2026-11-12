@@ -23,7 +23,9 @@ Follow the existing module that is closest (bookings for anything with an approv
 
 ## Security rules
 
-- The master list routes are currently public (known issue, being fixed). Never add a type with personal or staff-only data without restricting its `index`/`show` in the `MasterApiController` constructor (see how `equipment_loans` is gated).
+- Only the types in `config('constants.PUBLIC_MASTER_TYPES')` can be listed without logging in (what the kiosk needs). Every other type's `index`/`show` requires login plus `{type} view`, enforced in the `MasterApiController` constructor. Add a type to the public list only if the kiosk needs it and it holds no personal data.
+- Public `bookings` and `checkin` lists leave out the `student` relation for guests (only `student_id`). Keep it that way when changing those queries.
+- Kiosk cancel endpoints require the matching `student_id` unless the caller is staff with `{type} edit`; the kiosk sends it.
 - Don't eager-load full `user` relations into API responses; select only the columns needed (`'user:id,name'`).
 
 ## Frontend data layer contract (`store/global-slice.jsx`)
