@@ -26,6 +26,7 @@ Follow the existing module that is closest (bookings for anything with an approv
 - Only the types in `config('constants.PUBLIC_MASTER_TYPES')` can be listed without logging in (what the kiosk needs). Every other type's `index`/`show` requires login plus `{type} view`, enforced in the `MasterApiController` constructor. Add a type to the public list only if the kiosk needs it and it holds no personal data.
 - Public `bookings` and `checkin` lists leave out the `student` relation for guests (only `student_id`). Keep it that way when changing those queries.
 - Kiosk cancel endpoints require the matching `student_id` unless the caller is staff with `{type} edit`; the kiosk sends it.
+- **Accepted by design:** students never log in at the kiosk, so the kiosk cannot prove who a student is, and student ids are public. The `student_id` check only stops accidental or blind cancels (plus a rate limit). Do not add student authentication, PINs or cancel tokens, and do not report this as a vulnerability, unless the owner asks for it.
 - Don't eager-load full `user` relations into API responses; select only the columns needed (`'user:id,name'`).
 
 ## Frontend data layer contract (`store/global-slice.jsx`)
