@@ -16,7 +16,7 @@ const EMPTY = { name: "", email: "", password: "", access: "" };
 function ManageUser() {
     const isAuthenticated = useIsAuthenticated();
     const { data: users = [], refetch: myFetch } = useListQuery({ type: "users" });
-    const { save, remove, saving: loading, error, setError } = useSaveRecord("users");
+    const { save, remove, removeMany, saving: loading, error, setError } = useSaveRecord("users");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -81,6 +81,7 @@ function ManageUser() {
                                 onAdd={handleAdd}
                                 onEdit={handleEdit}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="User"
                             />
                             <Dialog

@@ -17,7 +17,7 @@ function ManageClass() {
     const isAuthenticated = useIsAuthenticated();
     const { data: records = [], refetch } = useListQuery({ type: "class" });
     const { data: levels = [] } = useListQuery({ type: "levels" });
-    const { save, remove, saving, error, setError } = useSaveRecord("class");
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("class");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -71,6 +71,7 @@ function ManageClass() {
                                 onAdd={() => openForm()}
                                 onEdit={(id) => openForm(records.find((r) => r.id === id))}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Class"
                             />
                             <Dialog

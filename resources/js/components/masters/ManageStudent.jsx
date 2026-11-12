@@ -17,7 +17,7 @@ function ManageStudent() {
     const isAuthenticated = useIsAuthenticated();
     const { data: records = [], refetch } = useListQuery({ type: "students" });
     const { data: classes = [] } = useListQuery({ type: "class" });
-    const { save, remove, saving, error, setError } = useSaveRecord("students");
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("students");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -71,6 +71,7 @@ function ManageStudent() {
                                 onAdd={() => openForm()}
                                 onEdit={(id) => openForm(records.find((r) => r.id === id))}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Student"
                             />
                             <Dialog

@@ -132,6 +132,7 @@ function ManageEquipment() {
                                 onAdd={handleAddCca}
                                 onEdit={handleEditCca}
                                 onDelete={ccaRecords.remove}
+                                onDeleteMany={ccaRecords.removeMany}
                                 onAddEquipment={handleAddEquipment}
                                 onEditEquipment={handleEditEquipment}
                                 onDeleteEquipment={handleDeleteEquipment}
