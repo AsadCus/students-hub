@@ -15,7 +15,7 @@ const EMPTY = { name: "" };
 function ManageLevel() {
     const isAuthenticated = useIsAuthenticated();
     const { data: levels = [], refetch } = useListQuery({ type: "levels" });
-    const { save, remove, saving, error, setError } = useSaveRecord("levels");
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("levels");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -62,6 +62,7 @@ function ManageLevel() {
                                 onAdd={() => openForm()}
                                 onEdit={(id) => openForm(levels.find((l) => l.id === id))}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Level"
                             />
                             <Dialog

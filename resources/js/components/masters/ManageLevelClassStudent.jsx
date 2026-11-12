@@ -1,12 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    deleteRecord,
-    setStateData,
-} from "../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -16,206 +10,88 @@ import { InputText } from "primereact/inputtext";
 import { Button } from "primereact/button";
 import { Dropdown } from "primereact/dropdown";
 
+/** Levels that expand to their classes, which expand to their students. */
 function ManageLevelClassStudent() {
-    const dispatch = useDispatch();
+    const levelQuery = useListQuery({ type: "levels" });
+    const classQuery = useListQuery({ type: "class" });
+    const studentQuery = useListQuery({ type: "students" });
+    const levelRecords = useSaveRecord("levels");
+    const classRecords = useSaveRecord("class");
+    const studentRecords = useSaveRecord("students");
+
     const [levelDialog, setLevelDialog] = useState(false);
     const [classDialog, setClassDialog] = useState(false);
     const [studentDialog, setStudentDialog] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState({ name: "" });
-    const [classFormData, setClassFormData] = useState({
-        name: "",
-        level_id: null,
-    });
-    const [studentFormData, setStudentFormData] = useState({
-        name: "",
-        class_id: null,
-    });
-    const [loading, setLoading] = useState(false);
-    const [loadingClasses, setLoadingClasses] = useState(true);
-    const [loadingStudents, setLoadingStudents] = useState(true);
-    const [loadingLevels, setLoadingLevels] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        levels: { data: levels = [], endPoints: levelEndPoints } = {},
-        class: { data: classes = [], endPoints: classEndPoints } = {},
-        students: { data: students = [], endPoints: studentEndPoints } = {},
-    } = useSelector((state) => state.global);
+    const [classFormData, setClassFormData] = useState({ name: "", level_id: null });
+    const [studentFormData, setStudentFormData] = useState({ name: "", class_id: null });
+    const mode = editId ? "edit" : "create";
 
+    const levels = useMemo(
+        () => (levelQuery.data ?? []).map((l) => ({ id: l.id, name: l.name })),
+        [levelQuery.data]
+    );
+    const classes = useMemo(
+        () =>
+            (classQuery.data ?? []).map((c) => ({
+                id: c.id,
+                level_id: c.level_id,
+                name: c.name,
+                student_count: c.students?.length ?? 0,
+            })),
+        [classQuery.data]
+    );
+    const students = useMemo(
+        () => (studentQuery.data ?? []).map((s) => ({ id: s.id, name: s.name, class_id: s.class_id })),
+        [studentQuery.data]
+    );
+
+    const isDataReady = !levelQuery.isLoading && !classQuery.isLoading && !studentQuery.isLoading;
+    const loading = levelRecords.saving || classRecords.saving || studentRecords.saving;
+    const error = levelDialog ? levelRecords.error : classDialog ? classRecords.error : studentRecords.error;
+    // DataTable calls this after an import; lists otherwise refresh through hubApi tags.
     const myFetch = () => {
-        dispatch(
-            getRecords({
-                type: "levels",
-                endPoint: levelEndPoints.collection,
-            })
-        )
-            .then((d) => {
-                if (d) {
-                    const formattedLevels = d.map((i) => ({
-                        id: i.id,
-                        name: i.name,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "levels",
-                            data: formattedLevels,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingLevels(false));
-        dispatch(
-            getRecords({
-                type: "class",
-                endPoint: classEndPoints.collection,
-            })
-        )
-            .then((d) => {
-                if (d) {
-                    const formattedClasses = d.map((i) => ({
-                        id: i.id,
-                        level_id: i.level_id,
-                        name: i.name,
-                        student_count: i.students.length,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "class",
-                            data: formattedClasses,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingClasses(false));
-        dispatch(
-            getRecords({
-                type: "students",
-                endPoint: studentEndPoints.collection,
-            })
-        )
-            .then((d) => {
-                if (d) {
-                    const formattedStudents = d.map((i) => ({
-                        id: i.id,
-                        name: i.name,
-                        class_id: i.class_id,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "students",
-                            data: formattedStudents,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingStudents(false));
+        levelQuery.refetch();
+        classQuery.refetch();
+        studentQuery.refetch();
     };
 
-    useEffect(() => {
-        myFetch();
-    }, [dispatch]);
-
-    const handleAddLevel = () => {
-        setMode("create");
-        setFormData({ name: "" });
-        setError("");
-        setLevelDialog(true);
+    const open = (setDialog, setForm, records, form, id = null) => {
+        setForm(form);
+        setEditId(id);
+        records.setError("");
+        setDialog(true);
     };
 
+    const handleAddLevel = () => open(setLevelDialog, setFormData, levelRecords, { name: "" });
     const handleEditLevel = (id) => {
-        const level = levels.find((u) => u.id === id);
-        if (level) {
-            setFormData({ name: level.name });
-            setEditId(id);
-            setMode("edit");
-            setError("");
-            setLevelDialog(true);
-        }
+        const level = levels.find((l) => l.id === id);
+        if (level) open(setLevelDialog, setFormData, levelRecords, { name: level.name }, id);
     };
-
-    const handleAddClass = (levelId) => {
-        setMode("create");
-        setClassFormData({ name: "", level_id: levelId });
-        setError("");
-        setClassDialog(true);
-    };
-
+    const handleAddClass = (levelId) =>
+        open(setClassDialog, setClassFormData, classRecords, { name: "", level_id: levelId });
     const handleEditClass = (id) => {
-        const classItem = classes.find((u) => u.id === id);
-        if (classItem) {
-            setClassFormData({
-                name: classItem.name,
-                level_id: classItem.level_id,
-            });
-            setEditId(id);
-            setMode("edit");
-            setError("");
-            setClassDialog(true);
-        }
+        const item = classes.find((c) => c.id === id);
+        if (item) open(setClassDialog, setClassFormData, classRecords, { name: item.name, level_id: item.level_id }, id);
     };
-
-    const handleAddStudent = (classId) => {
-        setMode("create");
-        setStudentFormData({ name: "", class_id: classId });
-        setError("");
-        setStudentDialog(true);
-    };
-
+    const handleAddStudent = (classId) =>
+        open(setStudentDialog, setStudentFormData, studentRecords, { name: "", class_id: classId });
     const handleEditStudent = (id) => {
-        const student = students.find((u) => u.id === id);
-        if (student) {
-            setStudentFormData({
-                name: student.name,
-                class_id: student.class_id,
-            });
-            setEditId(id);
-            setMode("edit");
-            setError("");
-            setStudentDialog(true);
-        }
+        const student = students.find((s) => s.id === id);
+        if (student) open(setStudentDialog, setStudentFormData, studentRecords, { name: student.name, class_id: student.class_id }, id);
     };
-
-    const handleDeleteClass = (id) => {
-        dispatch(
-            deleteRecord({
-                endPoint: `${classEndPoints.delete}${id}`,
-            })
-        ).then((success) => {
-            if (success) {
-                myFetch();
-            }
-        });
-    };
-
-    const handleDeleteStudent = (id) => {
-        dispatch(
-            deleteRecord({
-                endPoint: `${studentEndPoints.delete}${id}`,
-            })
-        ).then((success) => {
-            if (success) {
-                myFetch();
-            }
-        });
-    };
+    const handleDeleteClass = (id) => classRecords.remove(id);
+    const handleDeleteStudent = (id) => studentRecords.remove(id);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
-
     const handleClassChange = (e) => {
         const { name, value } = e.target;
         setClassFormData((prev) => ({ ...prev, [name]: value }));
     };
-
     const handleStudentChange = (e) => {
         const { name, value } = e.target;
         setStudentFormData((prev) => ({ ...prev, [name]: value }));
@@ -223,109 +99,13 @@ function ManageLevelClassStudent() {
 
     const handleSubmit = async (e, formType) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-
-        try {
-            if (formType === "levels") {
-                if (mode === "create") {
-                    dispatch(
-                        createRecord({
-                            type: "levels",
-                            endPoint: levelEndPoints.store,
-                            data: formData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setFormData({ name: "" });
-                            setLevelDialog(false);
-                            myFetch();
-                        }
-                    });
-                } else {
-                    dispatch(
-                        updateRecord({
-                            type: "levels",
-                            endPoint: `${levelEndPoints.update}${editId}`,
-                            data: formData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setFormData({ name: "" });
-                            setLevelDialog(false);
-                            myFetch();
-                        }
-                    });
-                }
-            } else if (formType === "class") {
-                if (mode === "create") {
-                    dispatch(
-                        createRecord({
-                            type: "class",
-                            endPoint: classEndPoints.store,
-                            data: classFormData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setClassFormData({ name: "", level_id: "" });
-                            setClassDialog(false);
-                            myFetch();
-                        }
-                    });
-                } else {
-                    dispatch(
-                        updateRecord({
-                            type: "class",
-                            endPoint: `${classEndPoints.update}${editId}`,
-                            data: classFormData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setClassFormData({ name: "", level_id: "" });
-                            setClassDialog(false);
-                            myFetch();
-                        }
-                    });
-                }
-            } else if (formType === "students") {
-                if (mode === "create") {
-                    dispatch(
-                        createRecord({
-                            type: "students",
-                            endPoint: studentEndPoints.store,
-                            data: studentFormData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setStudentFormData({ name: "", class_id: "" });
-                            setStudentDialog(false);
-                            myFetch();
-                        }
-                    });
-                } else {
-                    dispatch(
-                        updateRecord({
-                            type: "students",
-                            endPoint: `${studentEndPoints.update}${editId}`,
-                            data: studentFormData,
-                        })
-                    ).then((success) => {
-                        if (success) {
-                            setStudentFormData({ name: "", class_id: "" });
-                            setStudentDialog(false);
-                            myFetch();
-                        }
-                    });
-                }
-            }
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        const [records, data, close] = {
+            levels: [levelRecords, formData, () => setLevelDialog(false)],
+            class: [classRecords, classFormData, () => setClassDialog(false)],
+            students: [studentRecords, studentFormData, () => setStudentDialog(false)],
+        }[formType];
+        if (await records.save(editId, data)) close();
     };
-
-    const isDataReady = !loadingLevels && !loadingClasses && !loadingStudents;
 
     return (
         <div>
@@ -342,9 +122,12 @@ function ManageLevelClassStudent() {
                                 identifier="id"
                                 hasImport={true}
                                 hasExpand={true}
+                                collection={levels}
                                 onFetch={myFetch}
                                 onAdd={handleAddLevel}
                                 onEdit={handleEditLevel}
+                                onDelete={levelRecords.remove}
+                                onDeleteMany={levelRecords.removeMany}
                                 onAddClass={handleAddClass}
                                 onEditClass={handleEditClass}
                                 onDeleteClass={handleDeleteClass}

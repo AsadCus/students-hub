@@ -16,7 +16,7 @@ const tooltip = { position: "bottom", mouseTrack: true, mouseTrackTop: 15 };
 /** Facilities (locations) that expand to their sub-facilities (rooms). */
 function ManageFacility() {
     const { data: facilities = [], isLoading, refetch } = useListQuery({ type: "facilities" });
-    const { save, remove, saving, error, setError } = useSaveRecord("facilities");
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("facilities");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -70,6 +70,7 @@ function ManageFacility() {
                                 onEdit={handleEdit}
                                 onEditSubFacility={handleEdit}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Facility"
                                 subFacilities={subFacilities}
                             />

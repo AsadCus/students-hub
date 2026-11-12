@@ -23,6 +23,23 @@ const LABELS = {
 
 export const labelOf = (type) => LABELS[type] || "Record";
 
+const PLURALS = {
+    class: "classes",
+    activities: "activities",
+    facilities: "facilities",
+    support_strategies: "support strategies",
+    equipment: "equipment",
+    ccas: "CCAs",
+    checkin: "check-ins",
+    counsels: "counsel records",
+    blocked_dates: "blocked dates",
+    equipment_loans: "loans",
+};
+
+/** "3 classes", "1 class": for bulk messages. */
+export const countOf = (n, type) =>
+    `${n} ${n === 1 ? lowerLabelOf(type) : PLURALS[type] || `${lowerLabelOf(type)}s`}`;
+
 /** "level", "support strategy", but "CCA" stays upper case. */
 export const lowerLabelOf = (type) => {
     const label = labelOf(type);

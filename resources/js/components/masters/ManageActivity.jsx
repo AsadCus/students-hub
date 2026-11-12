@@ -15,7 +15,7 @@ const EMPTY = { name: "", description: "" };
 function ManageActivity() {
     const isAuthenticated = useIsAuthenticated();
     const { data: records = [], refetch } = useListQuery({ type: "activities" });
-    const { save, remove, saving, error, setError } = useSaveRecord("activities");
+    const { save, remove, removeMany, saving, error, setError } = useSaveRecord("activities");
     const [visible, setVisible] = useState(false);
     const [editId, setEditId] = useState(null);
     const [formData, setFormData] = useState(EMPTY);
@@ -66,6 +66,7 @@ function ManageActivity() {
                                 onAdd={() => openForm()}
                                 onEdit={(id) => openForm(records.find((r) => r.id === id))}
                                 onDelete={remove}
+                                onDeleteMany={removeMany}
                                 title="Activity"
                             />
                             <Dialog

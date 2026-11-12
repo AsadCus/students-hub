@@ -19,7 +19,6 @@ import { Dropdown } from "primereact/dropdown";
 import { Calendar } from "primereact/calendar";
 import {
     deleteRecord,
-    importRecord,
     setToastMessage,
 } from "../../store/global-slice";
 import { Badge } from "primereact/badge";
@@ -28,6 +27,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { DateTime } from "luxon";
+import { useImportRecordsMutation } from "../../store/hub-api";
 
 const CustomDataTable = ({
     title,
@@ -41,6 +41,7 @@ const CustomDataTable = ({
     onConfirm = () => {},
     onCancel = () => {},
     onDelete = null,
+    onDeleteMany = null,
     onAddQuestion = () => {},
     onEditQuestion = () => {},
     onDeleteQuestion = () => {},
@@ -85,6 +86,7 @@ const CustomDataTable = ({
         support_strategies: { data: reduxSupportStrategies = [] } = {},
     } = useSelector((state) => state.global);
     const collection = propCollection || reduxCollection;
+    const [importRecords] = useImportRecordsMutation();
     const supportStrategiesData =
         supportStrategies.length > 0
             ? supportStrategies
@@ -326,7 +328,9 @@ const CustomDataTable = ({
     };
 
     const deleteSelectedRecords = () => {
-        if (onDelete) {
+        if (onDeleteMany) {
+            onDeleteMany(selectedRecords.map((record) => record[identifier]));
+        } else if (onDelete) {
             selectedRecords.forEach((record) => onDelete(record[identifier]));
         } else {
             Promise.all(
@@ -603,20 +607,13 @@ const CustomDataTable = ({
         const file = event.files[0];
         if (!file) return;
 
-        dispatch(
-            importRecord({
-                type,
-                endPoint: dataEndPoints.import,
-                file,
-                returnData: true,
-                ...(type === "levels" && hasExpand ? { hasExpand } : {}),
-            })
-        )
-            .then((result) => {
-                if (result) onFetch();
-            })
-            .catch((error) => console.error("Import error:", error.message))
-            .finally(() => overlayPanelRef.current.hide());
+        // Lists refresh through hubApi tags; onFetch also covers legacy pages.
+        // The result ("2 added, 3 updated") or the error is toasted by api-toasts.
+        importRecords({ type, file, hasExpand: type === "levels" && !!hasExpand })
+            .unwrap()
+            .then(() => onFetch())
+            .catch(() => {})
+            .finally(() => overlayPanelRef.current?.hide());
     };
 
     const getUniqueStrategies = () => {
@@ -2016,6 +2013,7 @@ CustomDataTable.propTypes = {
     onConfirm: PropTypes.func,
     onCancel: PropTypes.func,
     onDelete: PropTypes.func,
+    onDeleteMany: PropTypes.func,
     onAddQuestion: PropTypes.func,
     onEditQuestion: PropTypes.func,
     onDeleteQuestion: PropTypes.func,

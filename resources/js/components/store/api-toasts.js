@@ -57,6 +57,8 @@ export const toastFor = (action) => {
     const endpoint = action.meta?.arg?.endpointName;
     const args = action.meta?.arg?.originalArgs ?? {};
     if (!endpoint) return null;
+    // The caller reports the outcome itself (e.g. one toast for a bulk delete).
+    if (args.silent) return null;
 
     if (isRejectedWithValue(action)) {
         const { status, message } = action.payload ?? {};

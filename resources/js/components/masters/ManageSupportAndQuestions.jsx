@@ -1,12 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import {
-    getRecords,
-    createRecord,
-    updateRecord,
-    deleteRecord,
-    setStateData,
-} from "../store/global-slice";
+import React, { useMemo, useState } from "react";
+import { useListQuery } from "../store/hub-api";
+import { useSaveRecord } from "../store/use-save-record";
 import Header from "../shared/layout/Header";
 import DataTable from "../shared/misc/DataTable";
 import { Card } from "primereact/card";
@@ -17,163 +11,108 @@ import { InputTextarea } from "primereact/inputtextarea";
 import { Dropdown } from "primereact/dropdown";
 import { Button } from "primereact/button";
 
+const EMPTY_QUESTION = {
+    support_strategy_id: null,
+    order: "",
+    text: "",
+    type: "text",
+    radio_options: [],
+};
+
+const questionTypes = [
+    { label: "Text", value: "text" },
+    { label: "Multiple Choices", value: "radio" },
+];
+
+/** "Ask Ms Vi" support strategies, each expanding to its questions. */
 function ManageSupportAndQuestions() {
-    const dispatch = useDispatch();
+    const strategyQuery = useListQuery({ type: "support_strategies" });
+    const questionQuery = useListQuery({ type: "questions" });
+    const strategyRecords = useSaveRecord("support_strategies");
+    const questionRecords = useSaveRecord("questions");
+
     const [strategyDialog, setStrategyDialog] = useState(false);
     const [questionDialog, setQuestionDialog] = useState(false);
-    const [mode, setMode] = useState("create");
     const [editId, setEditId] = useState(null);
     const [strategyFormData, setStrategyFormData] = useState({ name: "" });
-    const [questionFormData, setQuestionFormData] = useState({
-        support_strategy_id: null,
-        order: "",
-        text: "",
-        type: "text",
-        radio_options: [],
-    });
+    const [questionFormData, setQuestionFormData] = useState(EMPTY_QUESTION);
     const [radioOptionInput, setRadioOptionInput] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [loadingSupportStrategies, setLoadingSupportStrategies] =
-        useState(true);
-    const [loadingQuestions, setLoadingQuestions] = useState(true);
-    const [error, setError] = useState("");
-    const {
-        support_strategies: {
-            data: supportStrategies = [],
-            endPoints: strategyEndPoints,
-        },
-        questions: { data: questions = [], endPoints: questionEndPoints },
-    } = useSelector((state) => state.global);
+    const mode = editId ? "edit" : "create";
 
-    const questionTypes = [
-        { label: "Text", value: "text" },
-        { label: "Multiple Choices", value: "radio" },
-    ];
+    const supportStrategies = useMemo(
+        () =>
+            (strategyQuery.data ?? []).map((s) => ({
+                id: s.id,
+                name: s.name,
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+            })),
+        [strategyQuery.data]
+    );
+    const questions = useMemo(
+        () =>
+            (questionQuery.data ?? []).map((q) => ({
+                id: q.id,
+                support_strategy_id: q.support_strategy_id,
+                order: q.order,
+                text: q.text,
+                type: q.type,
+                radio_options: Array.isArray(q.radio_options) ? q.radio_options.map((o) => o.text) : [],
+                created_at: q.created_at,
+                updated_at: q.updated_at,
+            })),
+        [questionQuery.data]
+    );
 
-    useEffect(() => {
-        fetchSupportStrategies();
-        fetchQuestions();
-    }, [dispatch]);
-
+    const isDataReady = !strategyQuery.isLoading && !questionQuery.isLoading;
+    const loading = strategyRecords.saving || questionRecords.saving;
+    const error = strategyDialog ? strategyRecords.error : questionRecords.error;
     const fetchSupportStrategies = () => {
-        dispatch(
-            getRecords({
-                type: "support_strategies",
-                endPoint: strategyEndPoints.collection,
-            })
-        )
-            .then((d) => {
-                if (d) {
-                    const formattedData = d.map((i) => ({
-                        id: i.id,
-                        name: i.name,
-                        created_at: i.created_at,
-                        updated_at: i.updated_at,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "support_strategies",
-                            data: formattedData,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingSupportStrategies(false));
-    };
-
-    const fetchQuestions = () => {
-        dispatch(
-            getRecords({
-                type: "questions",
-                endPoint: questionEndPoints.collection,
-            })
-        )
-            .then((d) => {
-                if (d) {
-                    const formattedData = d.map((i) => ({
-                        id: i.id,
-                        support_strategy_id: i.support_strategy_id,
-                        order: i.order,
-                        text: i.text,
-                        type: i.type,
-                        radio_options: Array.isArray(i.radio_options)
-                            ? i.radio_options.map((opt) => opt.text)
-                            : [],
-                        created_at: i.created_at,
-                        updated_at: i.updated_at,
-                    }));
-                    dispatch(
-                        setStateData({
-                            type: "questions",
-                            data: formattedData,
-                            key: "data",
-                            isMerge: false,
-                        })
-                    );
-                }
-            })
-            .finally(() => setLoadingQuestions(false));
+        strategyQuery.refetch();
+        questionQuery.refetch();
     };
 
     const handleAddStrategy = () => {
-        setMode("create");
+        setEditId(null);
         setStrategyFormData({ name: "" });
+        strategyRecords.setError("");
         setStrategyDialog(true);
     };
 
     const handleEditStrategy = (id) => {
         const strategy = supportStrategies.find((s) => s.id === id);
-        if (strategy) {
-            setStrategyFormData({ name: strategy.name });
-            setEditId(id);
-            setMode("edit");
-            setStrategyDialog(true);
-        }
+        if (!strategy) return;
+        setEditId(id);
+        setStrategyFormData({ name: strategy.name });
+        strategyRecords.setError("");
+        setStrategyDialog(true);
     };
 
     const handleAddQuestion = (supportStrategyId) => {
-        setMode("create");
-        setQuestionFormData({
-            support_strategy_id: supportStrategyId,
-            order: "",
-            text: "",
-            type: "text",
-            radio_options: [],
-        });
+        setEditId(null);
+        setQuestionFormData({ ...EMPTY_QUESTION, support_strategy_id: supportStrategyId });
         setRadioOptionInput("");
+        questionRecords.setError("");
         setQuestionDialog(true);
     };
 
     const handleEditQuestion = (id) => {
         const question = questions.find((q) => q.id === id);
-        if (question) {
-            setQuestionFormData({
-                support_strategy_id: question.support_strategy_id,
-                order: question.order,
-                text: question.text,
-                type: question.type,
-                radio_options: question.radio_options || [],
-            });
-            setEditId(id);
-            setMode("edit");
-            setRadioOptionInput("");
-            setQuestionDialog(true);
-        }
+        if (!question) return;
+        setEditId(id);
+        setQuestionFormData({
+            support_strategy_id: question.support_strategy_id,
+            order: question.order,
+            text: question.text,
+            type: question.type,
+            radio_options: question.radio_options || [],
+        });
+        setRadioOptionInput("");
+        questionRecords.setError("");
+        setQuestionDialog(true);
     };
 
-    const handleDeleteQuestion = (id) => {
-        dispatch(
-            deleteRecord({
-                endPoint: `${questionEndPoints.delete}${id}`,
-            })
-        ).then((success) => {
-            if (success) {
-                fetchQuestions();
-            }
-        });
-    };
+    const handleDeleteQuestion = (id) => questionRecords.remove(id);
 
     const handleStrategyChange = (e) => {
         const { name, value } = e.target;
@@ -185,9 +124,7 @@ function ManageSupportAndQuestions() {
         setQuestionFormData((prev) => ({
             ...prev,
             [name]: value,
-            ...(name === "type" && value === "text"
-                ? { radio_options: [] }
-                : {}),
+            ...(name === "type" && value === "text" ? { radio_options: [] } : {}),
         }));
     };
 
@@ -208,106 +145,23 @@ function ManageSupportAndQuestions() {
         }));
     };
 
+    // The form keeps what was typed if the save fails.
     const handleStrategySubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            if (mode === "create") {
-                dispatch(
-                    createRecord({
-                        type: "support_strategies",
-                        endPoint: strategyEndPoints.store,
-                        data: strategyFormData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setStrategyDialog(false);
-                        fetchSupportStrategies();
-                    }
-                });
-            } else {
-                dispatch(
-                    updateRecord({
-                        type: "support_strategies",
-                        endPoint: `${strategyEndPoints.update}${editId}`,
-                        data: strategyFormData,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setStrategyDialog(false);
-                        fetchSupportStrategies();
-                    }
-                });
-            }
-            setStrategyFormData({ name: "" });
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        if (await strategyRecords.save(editId, strategyFormData)) setStrategyDialog(false);
     };
 
     const handleQuestionSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError("");
-        try {
-            const data = {
-                support_strategy_id: questionFormData.support_strategy_id,
-                order: questionFormData.order,
-                text: questionFormData.text,
-                type: questionFormData.type,
-                ...(questionFormData.type === "radio"
-                    ? { radio_options: questionFormData.radio_options }
-                    : {}),
-            };
-
-            if (mode === "create") {
-                dispatch(
-                    createRecord({
-                        type: "questions",
-                        endPoint: questionEndPoints.store,
-                        data,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setQuestionDialog(false);
-                        fetchSupportStrategies();
-                        fetchQuestions();
-                    }
-                });
-            } else {
-                dispatch(
-                    updateRecord({
-                        type: "questions",
-                        endPoint: `${questionEndPoints.update}${editId}`,
-                        data,
-                    })
-                ).then((success) => {
-                    if (success) {
-                        setQuestionDialog(false);
-                        fetchSupportStrategies();
-                        fetchQuestions();
-                    }
-                });
-            }
-            setQuestionFormData({
-                support_strategy_id: null,
-                order: "",
-                text: "",
-                type: "text",
-                radio_options: [],
-            });
-            setRadioOptionInput("");
-        } catch (err) {
-            setError(err.message || "Operation failed");
-        } finally {
-            setLoading(false);
-        }
+        const data = {
+            support_strategy_id: questionFormData.support_strategy_id,
+            order: questionFormData.order,
+            text: questionFormData.text,
+            type: questionFormData.type,
+            ...(questionFormData.type === "radio" ? { radio_options: questionFormData.radio_options } : {}),
+        };
+        if (await questionRecords.save(editId, data)) setQuestionDialog(false);
     };
-
-    const isDataReady = !loadingSupportStrategies && !loadingQuestions;
 
     return (
         <div>
@@ -323,9 +177,12 @@ function ManageSupportAndQuestions() {
                                 type="support_strategies"
                                 identifier="id"
                                 hasImport={true}
+                                collection={supportStrategies}
                                 onFetch={fetchSupportStrategies}
                                 onAdd={handleAddStrategy}
                                 onEdit={handleEditStrategy}
+                                onDelete={strategyRecords.remove}
+                                onDeleteMany={strategyRecords.removeMany}
                                 onAddQuestion={handleAddQuestion}
                                 onEditQuestion={handleEditQuestion}
                                 onDeleteQuestion={handleDeleteQuestion}
