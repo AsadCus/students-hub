@@ -55,6 +55,8 @@ One Stepper with shared Level → Class → Name steps, then flow-specific panel
 - Every bug fix and feature ships with a feature test. Roles and permissions exist in tests because the sync migration runs them.
 - Never edit a migration that is part of a tagged release; add a new one.
 - Records with history (equipment with loans, CCAs) are deactivated, not deleted.
+- Imports never delete existing records. Levels/classes/students are matched by name; activities, support strategies and facilities are updated in place by their key (`MasterApiController::importKeys`). New import types follow the same rule.
+- Radio question options are synced in place (`syncRadioOptions`) so answers keep pointing at their option; never delete-and-recreate options.
 
 ## Git workflow
 
