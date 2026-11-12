@@ -1,19 +1,19 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\BookingController;
-use App\Http\Controllers\Api\CounselController;
 use App\Http\Controllers\Api\CheckinController;
-use App\Http\Controllers\Api\MasterApiController;
+use App\Http\Controllers\Api\CounselController;
 use App\Http\Controllers\Api\EquipmentLoanController;
+use App\Http\Controllers\Api\MasterApiController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Auth\LoginController;
+use Illuminate\Support\Facades\Route;
 
 /**
  * References
  */
 $types = config('constants.MASTER_TYPE_ARRAY');
-Route::get('/app', fn() => response()->json(['status' => true, 'result' => []]));
+Route::get('/app', fn () => response()->json(['status' => true, 'result' => []]));
 
 /**
  * Authentication

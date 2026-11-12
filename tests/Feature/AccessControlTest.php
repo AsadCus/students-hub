@@ -19,6 +19,7 @@ class AccessControlTest extends TestCase
     use RefreshDatabase;
 
     private Student $student;
+
     private Facility $room;
 
     protected function setUp(): void
@@ -72,7 +73,7 @@ class AccessControlTest extends TestCase
         $this->actingAsRole('Checkin');
         $this->getJson('/api/users')->assertForbidden();
         $this->getJson('/api/counsels')->assertForbidden();
-        $this->getJson("/api/users/1")->assertForbidden();
+        $this->getJson('/api/users/1')->assertForbidden();
 
         $this->actingAsRole('Superadmin');
         $this->getJson('/api/users')->assertOk();

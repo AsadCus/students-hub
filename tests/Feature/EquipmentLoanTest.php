@@ -19,6 +19,7 @@ class EquipmentLoanTest extends TestCase
     use RefreshDatabase; // roles and permissions come from the sync migration
 
     private Student $student;
+
     private Equipment $camera;
 
     protected function setUp(): void

@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
-use GuzzleHttp\Client;
+use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use DateTime;
+use GuzzleHttp\Client;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Validator;
-use DateTime;
 
 class BookingController extends Controller
 {
@@ -30,7 +29,7 @@ class BookingController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Validation errors',
-                'errors' => $validation->errors()
+                'errors' => $validation->errors(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -41,14 +40,14 @@ class BookingController extends Controller
         if ($startTime <= $now) {
             return response()->json([
                 'status' => false,
-                'message' => 'Start time must be in the future.'
+                'message' => 'Start time must be in the future.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($endTime <= $startTime) {
             return response()->json([
                 'status' => false,
-                'message' => 'End time must be after start time.'
+                'message' => 'End time must be after start time.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -74,7 +73,7 @@ class BookingController extends Controller
         if ($existingBooking) {
             return response()->json([
                 'status' => false,
-                'message' => 'This facility is already booked for the selected time period.'
+                'message' => 'This facility is already booked for the selected time period.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -90,7 +89,7 @@ class BookingController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'Booking successful!',
-            'result' => $booking->load('student.class.level', 'facility')
+            'result' => $booking->load('student.class.level', 'facility'),
         ], Response::HTTP_OK);
     }
 
@@ -98,24 +97,24 @@ class BookingController extends Controller
     {
         $booking = Booking::find($id);
 
-        if (!$booking) {
+        if (! $booking) {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking not found.'
+                'message' => 'Booking not found.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'cancelled') {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking already cancelled.'
+                'message' => 'Booking already cancelled.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'closed') {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking already closed.'
+                'message' => 'Booking already closed.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -127,18 +126,18 @@ class BookingController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'Booking confirmed!',
-            'result' => $booking
+            'result' => $booking,
         ], Response::HTTP_OK);
     }
 
     private function sendToSocket($param = null)
     {
-        $client = new Client();
+        $client = new Client;
 
-        $socketAddress = env('APP_SOCKET_URL') . '/booking-confirmation';
+        $socketAddress = env('APP_SOCKET_URL').'/booking-confirmation';
 
         $client->post($socketAddress, [
-            'json' => ['data' => $param]
+            'json' => ['data' => $param],
         ]);
     }
 
@@ -166,24 +165,24 @@ class BookingController extends Controller
             }
         }
 
-        if (!$booking) {
+        if (! $booking) {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking not found.'
+                'message' => 'Booking not found.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'cancelled') {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking already cancelled.'
+                'message' => 'Booking already cancelled.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         if ($booking->status === 'closed') {
             return response()->json([
                 'status' => false,
-                'message' => 'Booking already closed.'
+                'message' => 'Booking already closed.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
@@ -193,7 +192,7 @@ class BookingController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'Booking cancelled!',
-            'result' => $booking
+            'result' => $booking,
         ], Response::HTTP_OK);
     }
 }
