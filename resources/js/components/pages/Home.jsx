@@ -676,6 +676,7 @@ function Home() {
         setError("");
         const cancelData = {
             status: "cancelled",
+            student_id: studentId, // the API only lets a student cancel their own booking
         };
         dispatch(
             updateRecord({

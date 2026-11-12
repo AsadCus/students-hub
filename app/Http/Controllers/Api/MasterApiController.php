@@ -2,19 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Question;
-use App\Models\EquipmentLoan;
-use App\Services\EquipmentLoanService;
+use App\Http\Controllers\Controller;
 use App\Models\BlockedDate;
+use App\Models\EquipmentLoan;
+use App\Models\Question;
 use App\Models\RadioOption;
+use App\Services\EquipmentLoanService;
+use App\Services\MasterService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Validation\Rule;
-use App\Services\MasterService;
 use Illuminate\Support\Facades\DB;
-use App\Http\Controllers\Controller;
-use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
 use Spatie\Permission\Models\Role;
 
 class MasterApiController extends Controller
@@ -30,18 +30,16 @@ class MasterApiController extends Controller
 
         $urlMasterType = request()->segment(2);
 
-        if (!in_array($urlMasterType, config('constants.MASTER_TYPE_ARRAY'))) {
+        if (! in_array($urlMasterType, config('constants.MASTER_TYPE_ARRAY'))) {
             return response()->json(['status' => false, 'message' => 'Master Type not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // Loan records are staff-only; the kiosk only needs CCAs and equipment.
-        // ponytail: other types are still publicly listable until Phase 1 (C2) adds the allowlist.
-        if ($urlMasterType === config('constants.MASTER_TYPE_ARRAY.EQUIPMENT_LOAN_MASTER_TYPE')) {
-            $this->middleware(['auth:sanctum', 'permission:' . $urlMasterType . ' view'], ['only' => ['index', 'show']]);
+        if (! in_array($urlMasterType, config('constants.PUBLIC_MASTER_TYPES'))) {
+            $this->middleware(['auth:sanctum', 'permission:'.$urlMasterType.' view'], ['only' => ['index', 'show']]);
         }
-        $this->middleware('permission:' . $urlMasterType . ' create', ['only' => ['store', 'import']]);
-        $this->middleware('permission:' . $urlMasterType . ' edit', ['only' => ['update']]);
-        $this->middleware('permission:' . $urlMasterType . ' delete', ['only' => ['destroy']]);
+        $this->middleware('permission:'.$urlMasterType.' create', ['only' => ['store', 'import']]);
+        $this->middleware('permission:'.$urlMasterType.' edit', ['only' => ['update']]);
+        $this->middleware('permission:'.$urlMasterType.' delete', ['only' => ['destroy']]);
     }
 
     private function getRuleValidationByType($type, $id = null)
@@ -49,12 +47,12 @@ class MasterApiController extends Controller
         $rules = [];
         if ($type === config('constants.MASTER_TYPE_ARRAY.USER_MASTER_TYPE')) {
             $rules = [
-                'name' =>  ['required', 'string'],
+                'name' => ['required', 'string'],
                 'email' => [
                     'required',
                     'string',
-                    Rule::unique('users', 'email')->ignore($id)->whereNull('deleted_at')
-                ]
+                    Rule::unique('users', 'email')->ignore($id)->whereNull('deleted_at'),
+                ],
             ];
         }
         if ($type === config('constants.MASTER_TYPE_ARRAY.LEVEL_MASTER_TYPE')) {
@@ -104,6 +102,7 @@ class MasterApiController extends Controller
                 $rules['start_date'] = ['required', 'date_format:Y-m-d'];
             }
         }
+
         return $rules;
     }
 
@@ -120,9 +119,10 @@ class MasterApiController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'Validation errors',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+
         return true;
     }
 
@@ -158,7 +158,7 @@ class MasterApiController extends Controller
             $radioOptions = $request->input('radio_options', []);
             try {
                 $storedQuestion = $this->masterService->create($type, $data);
-                if ($data['type'] === 'radio' && !empty($radioOptions)) {
+                if ($data['type'] === 'radio' && ! empty($radioOptions)) {
                     foreach ($radioOptions as $option) {
                         $this->masterService->create('radio_options', [
                             'question_id' => $storedQuestion->id,
@@ -166,15 +166,16 @@ class MasterApiController extends Controller
                         ]);
                     }
                 }
+
                 return response()->json([
                     'status' => true,
                     'message' => "$type created",
-                    'result' => $storedQuestion->load('radioOptions')
+                    'result' => $storedQuestion->load('radioOptions'),
                 ], Response::HTTP_CREATED);
             } catch (\Exception $e) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Failed to create question: ' . $e->getMessage()
+                    'message' => 'Failed to create question: '.$e->getMessage(),
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
@@ -204,22 +205,22 @@ class MasterApiController extends Controller
                 return response()->json([
                     'status' => true,
                     'message' => 'Counsel created',
-                    'result' => $counsel->load('answers')
+                    'result' => $counsel->load('answers'),
                 ], Response::HTTP_CREATED);
             } catch (\Exception $e) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Failed to create counsel: ' . $e->getMessage()
+                    'message' => 'Failed to create counsel: '.$e->getMessage(),
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
         if ($type === 'blocked_dates') {
             $data = $request->all();
             $exists = $this->blockedDate->where('date', $request->date)->exists();
-            if (!$exists) {
+            if (! $exists) {
                 $result = $this->masterService->create($type, $data);
             } else {
-                return response()->json(['status' => true, 'message' => "Date already blocked."], Response::HTTP_CONFLICT);
+                return response()->json(['status' => true, 'message' => 'Date already blocked.'], Response::HTTP_CONFLICT);
             }
 
             return response()->json(['status' => true, 'message' => "$type created", 'result' => $result], Response::HTTP_CREATED);
@@ -231,17 +232,20 @@ class MasterApiController extends Controller
                 EquipmentLoan::RESERVED,
                 $request->user()?->id
             );
+
             return response()->json(['status' => true, 'message' => 'Loan created', 'result' => $loan->load('equipment.cca', 'student.class.level')], Response::HTTP_CREATED);
         }
         if ($type === 'users') {
             $data = $request->all();
             $result = $this->masterService->create($type, $data);
             $result->assignRole($request->access);
+
             return response()->json(['status' => true, 'message' => "$type created", 'result' => $result], Response::HTTP_CREATED);
         }
 
         $data = $request->all();
         $result = $this->masterService->create($type, $data);
+
         return response()->json(['status' => true, 'message' => "$type created", 'result' => $result], Response::HTTP_CREATED);
     }
 
@@ -273,12 +277,12 @@ class MasterApiController extends Controller
                 return response()->json([
                     'status' => true,
                     'message' => "$type updated",
-                    'result' => $updatedQuestion->load('radioOptions')
+                    'result' => $updatedQuestion->load('radioOptions'),
                 ], Response::HTTP_OK);
             } catch (\Exception $e) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Failed to update question: ' . $e->getMessage()
+                    'message' => 'Failed to update question: '.$e->getMessage(),
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
         }
@@ -287,17 +291,20 @@ class MasterApiController extends Controller
                 EquipmentLoan::findOrFail($id),
                 $request->only(['equipment_id', 'student_id', 'start_date', 'end_date', 'notes'])
             );
+
             return response()->json(['status' => true, 'message' => 'Loan updated', 'result' => $loan->load('equipment.cca', 'student.class.level')], Response::HTTP_OK);
         }
         if ($type === 'users') {
             $data = $request->all();
             $result = $this->masterService->update($type, $id, $data);
             $result->syncRoles($request->access);
+
             return response()->json(['status' => true, 'message' => "$type updated", 'result' => $result], Response::HTTP_OK);
         }
 
         $data = $request->all();
         $result = $this->masterService->update($type, $id, $data);
+
         return response()->json(['status' => true, 'message' => "$type updated", 'result' => $result], Response::HTTP_OK);
     }
 
@@ -327,10 +334,10 @@ class MasterApiController extends Controller
                 $expectedHeaders = ['Level', 'Class', 'Student'];
                 $normalizedHeaders = array_map('strtolower', $headers);
                 $expectedNormalized = array_map('strtolower', $expectedHeaders);
-                if (!empty(array_diff($expectedNormalized, $normalizedHeaders))) {
+                if (! empty(array_diff($expectedNormalized, $normalizedHeaders))) {
                     return response()->json([
                         'status' => false,
-                        'message' => 'Invalid file format. Expected columns: ' . implode(', ', $expectedHeaders),
+                        'message' => 'Invalid file format. Expected columns: '.implode(', ', $expectedHeaders),
                     ], Response::HTTP_UNPROCESSABLE_ENTITY);
                 }
 
@@ -357,41 +364,41 @@ class MasterApiController extends Controller
                     $levelData = ['name' => trim($rowData['level'])];
                     $levelValidator = Validator::make($levelData, $levelValidationRules);
                     if ($levelValidator->fails()) {
-                        throw new \Exception("Level validation failed at row " . ($index + 2) . ": " . implode(", ", $levelValidator->errors()->all()));
+                        throw new \Exception('Level validation failed at row '.($index + 2).': '.implode(', ', $levelValidator->errors()->all()));
                     }
 
                     // Find or create Level
                     $level = $this->masterService->getByName('levels', $levelData['name']);
-                    if (!$level) {
+                    if (! $level) {
                         $level = $this->masterService->create('levels', $levelData);
                         $imported[] = ['type' => 'level', 'data' => $level];
                     }
 
                     // Validate and process Class (if provided)
                     $class = null;
-                    if (!empty(trim($rowData['class']))) {
+                    if (! empty(trim($rowData['class']))) {
                         $classData = [
                             'level_id' => $level->id,
                             'name' => trim($rowData['class']),
                         ];
                         $classValidator = Validator::make($classData, $classValidationRules);
                         if ($classValidator->fails()) {
-                            throw new \Exception("Class validation failed at row " . ($index + 2) . ": " . implode(", ", $classValidator->errors()->all()));
+                            throw new \Exception('Class validation failed at row '.($index + 2).': '.implode(', ', $classValidator->errors()->all()));
                         }
 
                         // Find or create Class
                         $classRequest = new Request($classData);
                         $class = $this->masterService->getAll('class', $classRequest)->first();
-                        if (!$class) {
+                        if (! $class) {
                             $class = $this->masterService->create('class', $classData);
                             $imported[] = ['type' => 'class', 'data' => $class];
                         }
                     }
 
                     // Validate and process Student (if provided)
-                    if (!empty(trim($rowData['student']))) {
-                        if (!$class) {
-                            throw new \Exception("Student specified without a Class at row " . ($index + 2));
+                    if (! empty(trim($rowData['student']))) {
+                        if (! $class) {
+                            throw new \Exception('Student specified without a Class at row '.($index + 2));
                         }
                         $studentData = [
                             'name' => trim($rowData['student']),
@@ -399,13 +406,13 @@ class MasterApiController extends Controller
                         ];
                         $studentValidator = Validator::make($studentData, $studentValidationRules);
                         if ($studentValidator->fails()) {
-                            throw new \Exception("Student validation failed at row " . ($index + 2) . ": " . implode(", ", $studentValidator->errors()->all()));
+                            throw new \Exception('Student validation failed at row '.($index + 2).': '.implode(', ', $studentValidator->errors()->all()));
                         }
 
                         // Find or create Student
                         $studentRequest = new Request($studentData);
                         $student = $this->masterService->getAll('students', $studentRequest)->first();
-                        if (!$student) {
+                        if (! $student) {
                             $student = $this->masterService->create('students', $studentData);
                             $imported[] = ['type' => 'student', 'data' => $student];
                         }
@@ -416,7 +423,7 @@ class MasterApiController extends Controller
 
                 return response()->json([
                     'status' => true,
-                    'message' => count($imported) . ' records imported successfully',
+                    'message' => count($imported).' records imported successfully',
                     'result' => $imported,
                 ], Response::HTTP_CREATED);
             } else {
@@ -464,7 +471,7 @@ class MasterApiController extends Controller
                             if ($parent) {
                                 $rowData['parent_id'] = $parent->id;
                             } else {
-                                throw new \Exception("Invalid parent: '$parentName' not found at row " . ($index + 2));
+                                throw new \Exception("Invalid parent: '$parentName' not found at row ".($index + 2));
                             }
                         } else {
                             $rowData['parent_id'] = null;
@@ -472,12 +479,12 @@ class MasterApiController extends Controller
                     }
 
                     foreach ($foreignKeys as $fk => $relatedType) {
-                        if ($type !== 'facilities' && isset($rowData[$fk]) && !is_numeric($rowData[$fk])) {
+                        if ($type !== 'facilities' && isset($rowData[$fk]) && ! is_numeric($rowData[$fk])) {
                             $relatedModel = $this->masterService->getByName($relatedType, $rowData[$fk]);
                             if ($relatedModel) {
                                 $rowData[$fk] = $relatedModel->id;
                             } else {
-                                throw new \Exception("Invalid $fk: '{$rowData[$fk]}' not found at row " . ($index + 2));
+                                throw new \Exception("Invalid $fk: '{$rowData[$fk]}' not found at row ".($index + 2));
                             }
                         }
                     }
@@ -486,7 +493,7 @@ class MasterApiController extends Controller
                     $validator = Validator::make($rowData, $validationRules);
 
                     if ($validator->fails()) {
-                        throw new \Exception("Validation failed at row " . ($index + 2) . ": " . implode(", ", $validator->errors()->all()));
+                        throw new \Exception('Validation failed at row '.($index + 2).': '.implode(', ', $validator->errors()->all()));
                     }
 
                     try {
@@ -507,9 +514,9 @@ class MasterApiController extends Controller
                     } catch (\Illuminate\Database\QueryException $e) {
                         if ($e->getCode() === '23000') {
                             $field = $this->extractFieldFromUniqueError($e->getMessage(), $type);
-                            throw new \Exception("Duplicate entry for $field: '{$rowData[$field]}' at row " . ($index + 2));
+                            throw new \Exception("Duplicate entry for $field: '{$rowData[$field]}' at row ".($index + 2));
                         }
-                        throw new \Exception("Error at row " . ($index + 2) . ": Unable to save record");
+                        throw new \Exception('Error at row '.($index + 2).': Unable to save record');
                     }
                 }
 
@@ -517,15 +524,16 @@ class MasterApiController extends Controller
 
                 return response()->json([
                     'status' => true,
-                    'message' => count($imported) . ' ' . ($type) . " imported successfully",
-                    'result' => $imported
+                    'message' => count($imported).' '.($type).' imported successfully',
+                    'result' => $imported,
                 ], Response::HTTP_CREATED);
             }
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'status' => false,
-                'message' => 'Import failed: ' . $e->getMessage()
+                'message' => 'Import failed: '.$e->getMessage(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
@@ -533,6 +541,7 @@ class MasterApiController extends Controller
     public function destroy(Request $request, $type, $id)
     {
         $this->masterService->delete($type, $id);
+
         return response()->json(['status' => true, 'message' => "$type deleted"], Response::HTTP_OK);
     }
 

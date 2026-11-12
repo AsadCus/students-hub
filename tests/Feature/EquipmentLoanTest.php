@@ -19,6 +19,7 @@ class EquipmentLoanTest extends TestCase
     use RefreshDatabase; // roles and permissions come from the sync migration
 
     private Student $student;
+
     private Equipment $camera;
 
     protected function setUp(): void
@@ -142,9 +143,23 @@ class EquipmentLoanTest extends TestCase
         $later = $this->loan('reserved', '2026-11-20', '2026-11-20');
         $pending = $this->loan('requested', '2026-11-25', '2026-11-25');
 
-        $this->putJson("/api/equipment-loans-cancel/{$startsToday->id}")->assertUnprocessable();
-        $this->putJson("/api/equipment-loans-cancel/{$later->id}")->assertOk()->assertJsonPath('result.status', 'cancelled');
-        $this->putJson("/api/equipment-loans-cancel/{$pending->id}")->assertOk();
+        $own = ['student_id' => $this->student->id];
+
+        $this->putJson("/api/equipment-loans-cancel/{$startsToday->id}", $own)->assertUnprocessable();
+        $this->putJson("/api/equipment-loans-cancel/{$later->id}", $own)->assertOk()->assertJsonPath('result.status', 'cancelled');
+        $this->putJson("/api/equipment-loans-cancel/{$pending->id}", $own)->assertOk();
+    }
+
+    public function test_kiosk_can_only_cancel_its_own_loan(): void
+    {
+        $loan = $this->loan('requested');
+
+        $this->putJson("/api/equipment-loans-cancel/{$loan->id}")->assertForbidden();
+        $this->putJson("/api/equipment-loans-cancel/{$loan->id}", ['student_id' => $this->student->id + 1])->assertForbidden();
+
+        // Staff can cancel any loan without naming the student.
+        $this->actingAsRole('Booking');
+        $this->putJson("/api/equipment-loans-cancel/{$loan->id}")->assertOk();
     }
 
     public function test_overdue_is_computed_and_filterable(): void

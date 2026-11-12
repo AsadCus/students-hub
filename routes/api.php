@@ -1,24 +1,24 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Api\BookingController;
-use App\Http\Controllers\Api\CounselController;
 use App\Http\Controllers\Api\CheckinController;
-use App\Http\Controllers\Api\MasterApiController;
+use App\Http\Controllers\Api\CounselController;
 use App\Http\Controllers\Api\EquipmentLoanController;
+use App\Http\Controllers\Api\MasterApiController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Auth\LoginController;
+use Illuminate\Support\Facades\Route;
 
 /**
  * References
  */
 $types = config('constants.MASTER_TYPE_ARRAY');
-Route::get('/app', fn() => response()->json(['status' => true, 'result' => []]));
+Route::get('/app', fn () => response()->json(['status' => true, 'result' => []]));
 
 /**
  * Authentication
  */
-Route::post('/login', [LoginController::class, 'login']);
+Route::post('/login', [LoginController::class, 'login'])->middleware('throttle:5,1');
 Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::post('/logout', [LoginController::class, 'logout']);
 });
@@ -56,7 +56,7 @@ Route::post('/booking', [BookingController::class, 'store']);
 Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::put('/booking-confirm/{id}', [BookingController::class, 'confirm']);
 });
-Route::put('/booking-cancel/{id}', [BookingController::class, 'cancel']);
+Route::put('/booking-cancel/{id}', [BookingController::class, 'cancel'])->middleware('throttle:10,1');
 
 /**
  * Equipment loans
@@ -64,7 +64,7 @@ Route::put('/booking-cancel/{id}', [BookingController::class, 'cancel']);
  * routes (/api/ccas, /api/equipment, /api/equipment_loans).
  */
 Route::post('/equipment-loans', [EquipmentLoanController::class, 'store']);
-Route::put('/equipment-loans-cancel/{id}', [EquipmentLoanController::class, 'cancel']);
+Route::put('/equipment-loans-cancel/{id}', [EquipmentLoanController::class, 'cancel'])->middleware('throttle:10,1');
 Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::put('/equipment-loans-confirm/{id}', [EquipmentLoanController::class, 'confirm']);
     Route::put('/equipment-loans-reject/{id}', [EquipmentLoanController::class, 'reject']);
