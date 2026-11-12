@@ -34,17 +34,14 @@ Follow the existing module that is closest (bookings for anything with an approv
 - **Accepted by design:** students never log in at the kiosk, so the kiosk cannot prove who a student is, and student ids are public. The `student_id` check only stops accidental or blind cancels (plus a rate limit). Do not add student authentication, PINs or cancel tokens, and do not report this as a vulnerability, unless the owner asks for it.
 - Don't eager-load full `user` relations into API responses; select only the columns needed (`'user:id,name'`).
 
-## Frontend data layer contract (`store/global-slice.jsx`)
+## Frontend data layer (RTK Query, `store/hub-api.js`)
 
-- `getRecords` resolves to an array and never throws. On failure it toasts and keeps the last good data.
-- `createRecord` / `updateRecord` / `importRecord` resolve to `true` (or the result with `returnData`) and **throw an `ApiError` on failure**, with `fieldErrors` from Laravel's 422. The kiosk flows in `Home.jsx` rely on the throw to skip their success branch. Never change this to return `false`.
-- `deleteRecord` resolves to `true` / `false`.
-- The thunks show error toasts themselves. Pages own their list: they format rows, store them with `setStateData`, and refetch after saving. Thunks never write save results into a list.
-- Always `await dispatch(createRecord(...))` inside `try/catch` in forms. Without `await`, the result is a Promise and every save looks successful.
-- The API base URL is the page's origin and the token is read from the auth cookie on every request (`components/api.jsx`). Don't reintroduce `APP_URL` or effect-based token setup.
+- All API calls go through `hubApi`: `useListQuery({ type, params })`, `useCreateMutation`, `useUpdateMutation`, `useRemoveMutation`, `useImportRecordsMutation`, plus named endpoints for login/logout, the login-required setting, kiosk actions (`checkIn`, `checkOut`, `book`, `submitCounsel`, `requestLoan`) and approvals (`confirmBooking`, `cancelBooking`, `confirmLoan`, `rejectLoan`, `returnLoan`, `cancelLoan`). Never import `api`/axios in a component.
+- Endpoints resolve to the response's `result`. Errors are `{status, message, fieldErrors}`; in forms do `try { await save(args).unwrap() } catch (e) { setError(e.message) }`.
+- Lists refresh themselves: mutations invalidate their type and related types (`RELATED` in hub-api.js). Don't refetch by hand after saving. When a list shows data from another type, add the relation to `RELATED`.
+- Toasts: one host in `app.jsx`, one function `notify.success|info|warn|error(summary, detail?)` (`utils/notify.js`). API results toast themselves in `store/api-toasts.js` (CRUD and approvals: "Level created"); kiosk screens show their own success message instead; form 422s are shown inline, not toasted. Pages must not add a second toast for the same result. Copy: English, summary in 2-4 words ("Couldn't save level"), never "Success"/"Error".
 - Send calendar dates as local `YYYY-MM-DD` (luxon `toISODate()`), not `toISOString()`, which shifts the day for UTC+7/+8 users.
-
-A planned migration moves all pages to RTK Query in one go. Until then, don't introduce a second data-fetching pattern.
+- Legacy: pages not yet migrated still use the thunks in `store/global-slice.jsx` (`getRecords` never throws; `createRecord`/`updateRecord`/`importRecord` throw `ApiError`, which the old kiosk relies on; always `await` them). Don't add new code on the thunks; migrate the page instead.
 
 ## Kiosk (`components/pages/Home.jsx`)
 
