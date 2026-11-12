@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 
 class SettingsController extends Controller
 {
@@ -20,6 +19,7 @@ class SettingsController extends Controller
     {
         $value = Setting::where('key', self::LOGIN_REQUIRED_KEY)->value('value');
         $enabled = filter_var($value, FILTER_VALIDATE_BOOL);
+
         return $this->ok(['login_required' => $enabled]);
     }
 

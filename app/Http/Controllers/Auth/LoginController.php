@@ -50,19 +50,19 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $validatedData = $request->validate([
-            'email'     => ['required', 'email'],
-            'password'  => ['required', 'string']
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
         ]);
 
         $user = User::where([['email', $validatedData['email']], ['deleted_at', null]])->first();
 
-        if (!$user || !Hash::check($validatedData['password'], $user->password)) {
+        if (! $user || ! Hash::check($validatedData['password'], $user->password)) {
             return $this->fail('Email or password is wrong.', 401);
         }
 
         $user->tokens()->delete();
 
-        $tokenString = $user->name . "-" . $user->email . "_" . $user->id;
+        $tokenString = $user->name.'-'.$user->email.'_'.$user->id;
 
         return $this->ok([
             'token' => $user->createToken($tokenString)->plainTextToken,
