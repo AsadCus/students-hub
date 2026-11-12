@@ -142,9 +142,29 @@ class BookingController extends Controller
         ]);
     }
 
-    public function cancel(int $id)
+    /**
+     * Staff with "bookings edit" can cancel any booking. At the kiosk a
+     * student can only cancel their own booking (student_id must match)
+     * before it starts.
+     */
+    public function cancel(Request $request, int $id)
     {
         $booking = Booking::find($id);
+
+        if ($booking && ! $request->user('sanctum')?->can('bookings edit')) {
+            if ((int) $request->input('student_id') !== $booking->student_id) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'You can only cancel your own booking.',
+                ], Response::HTTP_FORBIDDEN);
+            }
+            if ($booking->start_time->isPast()) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'This booking has already started and can no longer be cancelled.',
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
 
         if (!$booking) {
             return response()->json([

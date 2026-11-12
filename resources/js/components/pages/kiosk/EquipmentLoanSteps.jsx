@@ -74,7 +74,7 @@ export function useEquipmentLoan({ active, studentId }) {
                 updateRecord({
                     type: "equipment_loans",
                     endPoint: `${loanEndPoints.cancel}${requested.id}`,
-                    data: {},
+                    data: { student_id: studentId },
                     returnData: true,
                 })
             );

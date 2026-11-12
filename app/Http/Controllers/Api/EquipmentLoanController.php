@@ -44,9 +44,20 @@ class EquipmentLoanController extends Controller
         return $this->respond($this->loans->reject(EquipmentLoan::findOrFail($id)), 'Loan rejected');
     }
 
-    public function cancel(int $id)
+    /** Staff with "equipment_loans edit" can cancel any loan; at the kiosk only the student's own. */
+    public function cancel(Request $request, int $id)
     {
-        return $this->respond($this->loans->cancel(EquipmentLoan::findOrFail($id)), 'Loan cancelled');
+        $loan = EquipmentLoan::findOrFail($id);
+
+        if (! $request->user('sanctum')?->can('equipment_loans edit')
+            && (int) $request->input('student_id') !== $loan->student_id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'You can only cancel your own loan.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        return $this->respond($this->loans->cancel($loan), 'Loan cancelled');
     }
 
     public function markReturned(int $id)
