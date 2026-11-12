@@ -7,16 +7,19 @@ use Illuminate\Support\Carbon;
 
 class BlockedDate extends Model
 {
-    protected $table        = "blocked_dates";
-    protected $primaryKey   = "id";
-    protected $keyType      = "int";
+    protected $table = 'blocked_dates';
 
-    public $timestamps      = true;
-    public $incrementing    = true;
+    protected $primaryKey = 'id';
+
+    protected $keyType = 'int';
+
+    public $timestamps = true;
+
+    public $incrementing = true;
 
     protected $fillable = [
         'date',
-        'reason'
+        'reason',
     ];
 
     /** The first blocked date that falls between two moments (inclusive, by calendar date). */

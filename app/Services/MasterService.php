@@ -360,7 +360,6 @@ class MasterService
         $model->delete();
     }
 
-
     private function cascade($type, $id)
     {
         if ($type === 'levels') {
