@@ -20,7 +20,7 @@ import {
 import { stateKey } from "../utils/constants";
 
 const INITIAL_STATE = {
-    [stateKey.app]: APP_STATE,
+    [stateKey.app]: { ...APP_STATE, pending: 0 },
     [stateKey.users]: USER_STATE,
     [stateKey.roles]: ROLE_STATE,
     [stateKey.class]: CLASS_STATE,
@@ -37,6 +37,27 @@ const INITIAL_STATE = {
     [stateKey.blocked_dates]: BLOCKED_DATE_STATE,
 };
 
+const isPlainObject = (v) =>
+    v !== null && typeof v === "object" && !Array.isArray(v);
+
+// Arrays are upserted by id (so saving one record never turns a list into an
+// object); plain objects are shallow-merged; anything else is replaced.
+const mergeValue = (current, incoming) => {
+    if (Array.isArray(current)) {
+        const next = [...current];
+        for (const item of [].concat(incoming)) {
+            const i = item?.id == null ? -1 : next.findIndex((x) => x?.id === item.id);
+            if (i === -1) next.push(item);
+            else next[i] = { ...next[i], ...item };
+        }
+        return next;
+    }
+    if (isPlainObject(current) && isPlainObject(incoming)) {
+        return { ...current, ...incoming };
+    }
+    return incoming;
+};
+
 const globalSlice = createSlice({
     name: "global",
     initialState: INITIAL_STATE,
@@ -49,12 +70,13 @@ const globalSlice = createSlice({
                 isMerge = true,
                 isReset = false,
             } = action.payload;
-            const existingData = state[type][key];
-            state[type][key] = !isReset
-                ? isMerge
-                    ? { ...existingData, ...data }
-                    : data
-                : INITIAL_STATE[type][key];
+            const slot = state[type];
+            if (!slot || !key) return; // unknown slice or missing key: ignore instead of writing state[type]["undefined"]
+            if (isReset) {
+                slot[key] = INITIAL_STATE[type]?.[key];
+                return;
+            }
+            slot[key] = isMerge ? mergeValue(slot[key], data) : data;
         },
         resetStateData: (state, action) => {
             const { type = stateKey.app } = action.payload;
@@ -62,309 +84,241 @@ const globalSlice = createSlice({
         },
         resetStateKeyData: (state, action) => {
             const { type = stateKey.app, key } = action.payload;
-            state[type][key] = INITIAL_STATE[type][key];
+            if (state[type]) state[type][key] = INITIAL_STATE[type]?.[key];
+        },
+        // Spinner is reference-counted: it stays visible until the LAST
+        // in-flight request finishes, not the first one.
+        loadingStarted: (state, action) => {
+            const app = state[stateKey.app];
+            app.pending = (app.pending ?? 0) + 1;
+            app.spinner = { show: true, text: action.payload || "Loading..." };
+        },
+        loadingFinished: (state) => {
+            const app = state[stateKey.app];
+            app.pending = Math.max(0, (app.pending ?? 0) - 1);
+            if (app.pending === 0) app.spinner = INITIAL_STATE[stateKey.app].spinner;
         },
     },
 });
 
 export const { setStateData, resetStateData, resetStateKeyData } =
     globalSlice.actions;
+const { loadingStarted, loadingFinished } = globalSlice.actions;
 
 export const setToastMessage = (message) => (dispatch) => {
-    dispatch(setStateData({ key: "toastMessage", data: message }));
+    dispatch(setStateData({ key: "toastMessage", data: message, isMerge: false }));
 };
 
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class ApiError extends Error {
+    constructor(message, { status = null, fieldErrors = {}, body = null } = {}) {
+        super(message);
+        this.name = "ApiError";
+        this.status = status; // HTTP status, or null when the server was unreachable
+        this.fieldErrors = fieldErrors; // Laravel 422 `errors` object, for inline form messages
+        this.body = body;
+    }
+}
+
+const toApiError = (error, fallback) => {
+    if (error instanceof ApiError) return error;
+    const res = error?.response;
+    if (!res) {
+        return new ApiError(
+            "Can't reach the server. Check your connection and try again."
+        );
+    }
+    const body = res.data ?? {};
+    const fieldErrors = isPlainObject(body.errors) ? body.errors : {};
+    const firstFieldError = Object.values(fieldErrors).flat()[0];
+    // Laravel puts the useful text in errors.* for 422 and in message otherwise.
+    // Its own 401 body ("Unauthenticated.") is replaced with something actionable.
+    const message =
+        res.status === 401
+            ? "Your session has expired. Log in again."
+            : firstFieldError || body.message || `${fallback} (HTTP ${res.status})`;
+    return new ApiError(message, { status: res.status, fieldErrors, body });
+};
+
+// ---------------------------------------------------------------------------
+// One request helper: spinner, envelope check, error normalisation, toast.
+// Every thunk below goes through it, so behaviour is identical everywhere.
+// ---------------------------------------------------------------------------
+
+const request =
+    ({ method, url, data, config, spinnerText, fallbackError, silentStatuses = [] }) =>
+    async (dispatch) => {
+        dispatch(loadingStarted(spinnerText));
+        try {
+            const { data: body } = await api.request({ method, url, data, ...config });
+            // Backend returns { status, message, result }. status:false on a 2xx
+            // is still a failure.
+            if (body?.status === false) {
+                throw new ApiError(body.message || fallbackError, {
+                    status: 200,
+                    fieldErrors: isPlainObject(body.errors) ? body.errors : {},
+                    body,
+                });
+            }
+            return body ?? {};
+        } catch (raw) {
+            const error = toApiError(raw, fallbackError);
+            if (!silentStatuses.includes(error.status)) {
+                dispatch(
+                    setToastMessage({
+                        severity: error.status === 401 ? "warn" : "error",
+                        summary: error.status === 401 ? "Session expired" : "Error",
+                        detail: error.message,
+                        life: 6000,
+                    })
+                );
+            }
+            if (error.status === 401) {
+                // app.jsx can watch this flag and call signOut() + navigate("/login").
+                dispatch(setStateData({ key: "sessionExpired", data: true, isMerge: false }));
+            }
+            throw error;
+        } finally {
+            dispatch(loadingFinished());
+        }
+    };
+
+const urlFor = (endPoint, type) => {
+    const url = endPoint || (type ? `/api/${type}` : "");
+    if (!url) throw new Error("No endpoint or type provided"); // programmer error, fail loudly
+    return url;
+};
+
+const successToast = (detail) =>
+    setToastMessage({ severity: "success", summary: "Success", detail, life: 3000 });
+
+// ---------------------------------------------------------------------------
+// Public thunks — same names, arguments and return contract as before:
+//   getRecords   -> resolves to an array, never throws
+//   create/update/import -> resolves to `true` or the result; THROWS on failure
+//   deleteRecord -> resolves to true / false, never throws
+// ---------------------------------------------------------------------------
+
 export const getRecords =
-    ({ type = "", endPoint, key }) =>
+    ({ type = "", endPoint, key, params }) =>
     async (dispatch) => {
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Fetching..." },
-            })
-        );
+        const target = type || stateKey.app;
         try {
-            const url = endPoint || (type ? `/api/${type}` : "");
-            if (!url) throw new Error("No endpoint or type provided");
-
-            const response = await api.get(url);
-            dispatch(resetStateKeyData({ key: "spinner" }));
-
-            if (response.data.status) {
-                const result = response.data.result || [];
-                dispatch(
-                    setStateData({
-                        type: type || stateKey.app,
-                        data: result,
-                        key,
-                        isMerge: false,
-                    })
-                );
-                return result;
+            const body = await dispatch(
+                request({
+                    method: "get",
+                    url: urlFor(endPoint, type),
+                    config: { params },
+                    spinnerText: "Fetching...",
+                    fallbackError: "Couldn't load data",
+                    silentStatuses: [404],
+                })
+            );
+            const result = body.result ?? [];
+            if (key) {
+                dispatch(setStateData({ type: target, key, data: result, isMerge: false }));
             }
-            return [];
+            return result;
         } catch (error) {
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            if (error.response?.status === 401) {
-                dispatch(
-                    setToastMessage({
-                        severity: "warn",
-                        summary: "Warning!",
-                        detail: "Authentication required. Retrying after login...",
-                        life: 10000,
-                    })
-                );
-            } else if (error.response?.request.status === 404) {
-                dispatch(
-                    setStateData({
-                        type: type || stateKey.app,
-                        data: [],
-                        key,
-                        isMerge: false,
-                    })
-                );
-                dispatch(
-                    setToastMessage({
-                        severity: "info",
-                        summary: "Not Found",
-                        detail: "No data found",
-                        life: 3000,
-                    })
-                );
-                return [];
-            } else {
-                // console.error("Fetch error:", error.message);
+            // 404 means "nothing there": clear the list. Other errors keep the
+            // last good data on screen (the toast already explained what happened).
+            if (error.status === 404 && key) {
+                dispatch(setStateData({ type: target, key, data: [], isMerge: false }));
             }
+            if (!(error instanceof ApiError)) throw error; // programmer error
             return [];
         }
     };
 
-export const createRecord =
+const saveRecord =
+    ({ method, spinnerText, failText, successText }) =>
     ({ type = "", endPoint, data, returnData = false }) =>
     async (dispatch) => {
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Creating..." },
+        const body = await dispatch(
+            request({
+                method,
+                url: urlFor(endPoint, type),
+                data,
+                spinnerText,
+                fallbackError: failText,
             })
         );
-        try {
-            const response = await api.post(endPoint, data);
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            if (response.data.status) {
-                dispatch(
-                    setStateData({
-                        type,
-                        key: "data",
-                        data: response.data.result,
-                        isMerge: true,
-                    })
-                );
-                dispatch(
-                    setToastMessage({
-                        severity: "success",
-                        summary: "Success",
-                        detail: "Record created successfully",
-                    })
-                );
-                if (returnData === true) {
-                    return response.data.result;
-                }
-                return true;
-            }
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: "Failed to create record",
-                })
-            );
-            return false;
-        } catch (error) {
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            const errorMsg =
-                error.response?.data?.message || "Failed to create record";
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: errorMsg,
-                })
-            );
-            throw new Error(errorMsg);
-        }
+        const result = body.result;
+        // Not written into state[type].data: pages keep formatted rows there and
+        // refetch after saving. Merging the raw server record in (with nested
+        // objects like equipment or roles) breaks those tables until the refetch.
+        dispatch(successToast(successText));
+        return returnData ? result : true;
     };
 
-export const updateRecord =
-    ({ type = "", endPoint, data, returnData = false }) =>
-    async (dispatch) => {
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Updating..." },
-            })
-        );
-        try {
-            const response = await api.put(endPoint, data);
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            if (response.data.status) {
-                dispatch(
-                    setStateData({
-                        type,
-                        key: "data",
-                        data: response.data.result,
-                        isMerge: true,
-                    })
-                );
-                dispatch(
-                    setToastMessage({
-                        severity: "success",
-                        summary: "Success",
-                        detail: "Record updated successfully",
-                    })
-                );
-                if (returnData === true) {
-                    return response.data.result;
-                }
-                return true;
-            }
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: "Failed to update record",
-                })
-            );
-            return false;
-        } catch (error) {
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            const errorMsg =
-                error.response?.data?.message || "Failed to update record";
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: errorMsg,
-                })
-            );
-            throw new Error(errorMsg);
-        }
-    };
+export const createRecord = saveRecord({
+    method: "post",
+    spinnerText: "Creating...",
+    failText: "Failed to create record",
+    successText: "Record created successfully",
+});
+
+export const updateRecord = saveRecord({
+    method: "put",
+    spinnerText: "Updating...",
+    failText: "Failed to update record",
+    successText: "Record updated successfully",
+});
 
 export const deleteRecord =
-    ({ endPoint }) =>
-    async (dispatch) => {
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Deleting..." },
-            })
-        );
+    ({ type = "", endPoint, id }) =>
+    async (dispatch, getState) => {
         try {
-            const response = await api.delete(endPoint);
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            if (response.data.status) {
-                dispatch(
-                    setToastMessage({
-                        severity: "success",
-                        summary: "Success",
-                        detail: "Record deleted successfully",
-                    })
-                );
-                return true;
-            }
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: "Failed to delete record",
+            await dispatch(
+                request({
+                    method: "delete",
+                    url: urlFor(endPoint, type),
+                    spinnerText: "Deleting...",
+                    fallbackError: "Failed to delete record",
                 })
             );
-            return false;
         } catch (error) {
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            const errorMsg =
-                error.response?.data?.message || "Failed to delete record";
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: errorMsg,
-                })
-            );
+            if (!(error instanceof ApiError)) throw error;
             return false;
         }
+        // Optional: drop the row locally when the caller says which one.
+        const list = getState().global[type]?.data;
+        if (id != null && Array.isArray(list)) {
+            dispatch(
+                setStateData({
+                    type,
+                    key: "data",
+                    data: list.filter((x) => x?.id !== id),
+                    isMerge: false,
+                })
+            );
+        }
+        dispatch(successToast("Record deleted successfully"));
+        return true;
     };
 
 export const importRecord =
     ({ type = "", endPoint, file, returnData = false, hasExpand = false }) =>
     async (dispatch) => {
-        dispatch(
-            setStateData({
-                key: "spinner",
-                data: { show: true, text: "Importing..." },
+        const formData = new FormData();
+        formData.append("file", file);
+        if (hasExpand) formData.append("has_expand", "1");
+
+        const body = await dispatch(
+            request({
+                method: "post",
+                url: urlFor(endPoint, type),
+                data: formData, // axios sets multipart + boundary itself
+                config: { timeout: 120000 },
+                spinnerText: "Importing...",
+                fallbackError: "Failed to import data",
             })
         );
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-            if (hasExpand) {
-                formData.append("has_expand", true);
-            }
-
-            const response = await api.post(endPoint, formData, {
-                headers: {
-                    "Content-Type": "multipart/form-data",
-                },
-            });
-
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            if (response.data.status) {
-                dispatch(
-                    setStateData({
-                        type,
-                        key: "data",
-                        data: Array.isArray(response.data.result)
-                            ? response.data.result
-                            : [response.data.result],
-                        isMerge: true,
-                    })
-                );
-                dispatch(
-                    setToastMessage({
-                        severity: "success",
-                        summary: "Success",
-                        detail:
-                            response.data.message ||
-                            `${type} imported successfully`,
-                        life: 3000,
-                    })
-                );
-                return returnData ? response.data.result : true;
-            }
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: response.data.message || "Failed to import data",
-                    life: 5000,
-                })
-            );
-            return false;
-        } catch (error) {
-            dispatch(resetStateKeyData({ key: "spinner" }));
-            const errorMsg =
-                error.response?.data?.message || "Failed to import data";
-            dispatch(
-                setToastMessage({
-                    severity: "error",
-                    summary: "Error",
-                    detail: errorMsg,
-                    life: 5000,
-                })
-            );
-            throw new Error(errorMsg);
-        }
+        dispatch(successToast(body.message || `${type} imported successfully`));
+        return returnData ? body.result : true;
     };
 
 export const globalReducer = globalSlice.reducer;

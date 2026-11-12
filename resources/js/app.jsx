@@ -11,10 +11,13 @@ import {
     Navigate,
     useNavigate,
 } from "react-router-dom";
-import { AuthProvider, useAuthHeader, useAuthUser } from "react-auth-kit";
+import {
+    AuthProvider,
+    useAuthUser,
+    useSignOut,
+} from "react-auth-kit";
 import { Provider, useSelector, useDispatch } from "react-redux";
 import { store } from "./components/store";
-import { setAuthToken } from "./components/api";
 import { ProgressSpinner } from "primereact/progressspinner";
 import { Toast } from "primereact/toast";
 import { setStateData } from "./components/store/global-slice";
@@ -67,23 +70,26 @@ const PrivateRoute = ({ element, permission, loginRequired }) => {
 };
 
 const AppWrapper = () => {
-    const authHeader = useAuthHeader();
     const auth = useAuthUser();
-    const [authReady, setAuthReady] = useState(false);
     const [loginRequired, setLoginRequired] = useState(false);
-    const { spinner, toastMessage } = useSelector(
+    const signOut = useSignOut();
+    const { spinner, toastMessage, sessionExpired } = useSelector(
         (state) => state.global[stateKey.app]
     );
     const dispatch = useDispatch();
     const toast = useRef(null);
     const navigate = useNavigate();
 
+    // Set by global-slice on any 401. Thunks can't use auth hooks, so the redirect lives here.
     useEffect(() => {
-        const eject = setAuthToken(authHeader);
-        setAuthReady(true);
-
-        return eject;
-    }, [authHeader]);
+        if (!sessionExpired) return;
+        dispatch(setStateData({ key: "sessionExpired", data: false, isMerge: false }));
+        if (auth()) {
+            // ponytail: anonymous kiosk users only see the toast, no redirect
+            signOut();
+            navigate("/login");
+        }
+    }, [sessionExpired]);
 
     useEffect(() => {
         if (toastMessage) {
@@ -102,11 +108,7 @@ const AppWrapper = () => {
             }
         };
         fetchLoginRequired();
-    }, [authReady, auth()]);
-
-    if (!authReady) {
-        return <div>Loading authentication...</div>;
-    }
+    }, [auth()]);
 
     const protectedRoutes = [
         {

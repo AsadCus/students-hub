@@ -102,7 +102,7 @@ function ManageClass() {
         setError("");
         try {
             if (mode === "create") {
-                const success = dispatch(
+                const success = await dispatch(
                     createRecord({
                         type: "class",
                         endPoint: classEndPoints.store,
@@ -118,7 +118,7 @@ function ManageClass() {
                     myFetch();
                 }
             } else {
-                const success = dispatch(
+                const success = await dispatch(
                     updateRecord({
                         type: "class",
                         endPoint: `${classEndPoints.update}${editId}`,
