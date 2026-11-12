@@ -20,6 +20,8 @@ class LevelSeeder extends Seeder
             ['name' => 'Primary 4']
         ];
 
-        Level::insert($levels);
+        foreach ($levels as $level) {
+            Level::firstOrCreate(['name' => $level['name']]);
+        }
     }
 }

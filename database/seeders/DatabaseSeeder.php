@@ -14,6 +14,8 @@ use Database\Seeders\FacilitySeeder;
 use Database\Seeders\QuestionSeeder;
 use Database\Seeders\RadioOptionSeeder;
 use Database\Seeders\SupportStrategySeeder;
+use Database\Seeders\CcaSeeder;
+use Database\Seeders\EquipmentSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -31,6 +33,8 @@ class DatabaseSeeder extends Seeder
         $this->call(StudentSeeder::class);
         $this->call(ActivitySeeder::class);
         $this->call(FacilitySeeder::class);
+        $this->call(CcaSeeder::class);
+        $this->call(EquipmentSeeder::class);
         $this->call(SupportStrategySeeder::class);
         $this->call(QuestionSeeder::class);
         $this->call(RadioOptionSeeder::class);

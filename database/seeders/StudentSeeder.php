@@ -14,24 +14,29 @@ class StudentSeeder extends Seeder
     public function run(): void
     {
         $students = [
-            ['name' => 'Aaron Tan', 'class_id' => 1, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Li Jia Wei', 'class_id' => 1, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Nurul Aisyah', 'class_id' => 2, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Benjamin Lee', 'class_id' => 2, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Chen Yi Xin', 'class_id' => 3, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Siti Nur Hidayah', 'class_id' => 3, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Daniel Ong', 'class_id' => 4, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Xiao Mei', 'class_id' => 4, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Rahul Kumar', 'class_id' => 5, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Ethan Lim', 'class_id' => 5, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Mei Ling Chua', 'class_id' => 6, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Aisha bte Rahman', 'class_id' => 6, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Chloe Goh', 'class_id' => 7, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Jasmine Tan', 'class_id' => 7, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Kevin Lee', 'class_id' => 8, 'created_at' => now(), 'updated_at' => now()],
-            ['name' => 'Xiaolin Wong', 'class_id' => 8, 'created_at' => now(), 'updated_at' => now()]
+            ['name' => 'Aaron Tan', 'class_id' => 1],
+            ['name' => 'Li Jia Wei', 'class_id' => 1],
+            ['name' => 'Nurul Aisyah', 'class_id' => 2],
+            ['name' => 'Benjamin Lee', 'class_id' => 2],
+            ['name' => 'Chen Yi Xin', 'class_id' => 3],
+            ['name' => 'Siti Nur Hidayah', 'class_id' => 3],
+            ['name' => 'Daniel Ong', 'class_id' => 4],
+            ['name' => 'Xiao Mei', 'class_id' => 4],
+            ['name' => 'Rahul Kumar', 'class_id' => 5],
+            ['name' => 'Ethan Lim', 'class_id' => 5],
+            ['name' => 'Mei Ling Chua', 'class_id' => 6],
+            ['name' => 'Aisha bte Rahman', 'class_id' => 6],
+            ['name' => 'Chloe Goh', 'class_id' => 7],
+            ['name' => 'Jasmine Tan', 'class_id' => 7],
+            ['name' => 'Kevin Lee', 'class_id' => 8],
+            ['name' => 'Xiaolin Wong', 'class_id' => 8]
         ];
 
-        Student::insert($students);
+        foreach ($students as $student) {
+            Student::firstOrCreate(
+                ['name' => $student['name'], 'class_id' => $student['class_id']],
+                $student
+            );
+        }
     }
 }

@@ -24,6 +24,11 @@ class ClassSeeder extends Seeder
             ['name' => '4B', 'level_id' => 4]
         ];
 
-        DataClass::insert($classes);
+        foreach ($classes as $class) {
+            DataClass::firstOrCreate(
+                ['name' => $class['name'], 'level_id' => $class['level_id']],
+                $class
+            );
+        }
     }
 }

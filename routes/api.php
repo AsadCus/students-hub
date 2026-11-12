@@ -6,8 +6,6 @@ use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CounselController;
 use App\Http\Controllers\Api\CheckinController;
 use App\Http\Controllers\Api\MasterApiController;
-use App\Http\Controllers\Api\CcaController;
-use App\Http\Controllers\Api\EquipmentController;
 use App\Http\Controllers\Api\EquipmentLoanController;
 use App\Http\Controllers\Api\SettingsController;
 
@@ -61,13 +59,15 @@ Route::group(['middleware' => 'auth:sanctum'], function () {
 Route::put('/booking-cancel/{id}', [BookingController::class, 'cancel']);
 
 /**
- * Loan Equipment
+ * Equipment loans
+ * CCAs, equipment and the admin loan list/create/edit/delete use the master
+ * routes (/api/ccas, /api/equipment, /api/equipment_loans).
  */
-Route::get('/ccas', [CcaController::class, 'index']);
-Route::get('/equipment', [EquipmentController::class, 'index']);
 Route::post('/equipment-loans', [EquipmentLoanController::class, 'store']);
 Route::put('/equipment-loans-cancel/{id}', [EquipmentLoanController::class, 'cancel']);
 Route::group(['middleware' => 'auth:sanctum'], function () {
+    Route::put('/equipment-loans-confirm/{id}', [EquipmentLoanController::class, 'confirm']);
+    Route::put('/equipment-loans-reject/{id}', [EquipmentLoanController::class, 'reject']);
     Route::put('/equipment-loans-return/{id}', [EquipmentLoanController::class, 'markReturned']);
 });
 

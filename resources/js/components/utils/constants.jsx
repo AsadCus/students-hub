@@ -14,4 +14,7 @@ export const stateKey = {
     support_strategies: "support_strategies",
     questions: "questions",
     blocked_dates: "blocked_dates",
+    ccas: "ccas",
+    equipment: "equipment",
+    equipment_loans: "equipment_loans",
 };

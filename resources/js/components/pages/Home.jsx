@@ -25,6 +25,12 @@ import { Dropdown } from "primereact/dropdown";
 import { RadioButton } from "primereact/radiobutton";
 import { DateTime } from "luxon";
 import Header from "../shared/layout/Header";
+import {
+    useEquipmentLoan,
+    LoanCcaStep,
+    LoanEquipmentStep,
+    LoanDateStep,
+} from "./kiosk/EquipmentLoanSteps";
 import _ from "lodash";
 import "../../../css/home.css";
 
@@ -82,6 +88,10 @@ function Home() {
     const [selectedTimeSlots, setSelectedTimeSlots] = useState([]);
     const [selectedStrategy, setSelectedStrategy] = useState(null);
     const [answers, setAnswers] = useState({});
+    const loan = useEquipmentLoan({
+        active: showCard && activeButton === "loans",
+        studentId,
+    });
 
     // const socket = io("http://localhost:6001");
 
@@ -387,6 +397,7 @@ function Home() {
         setSelectedTimeSlots([]);
         setSelectedStrategy(null);
         setAnswers({});
+        loan.reset();
     };
 
     const handleCheckin = () => {
@@ -877,7 +888,7 @@ function Home() {
                         {auth() === null && (
                             <h4 className="launch-pad-title">Students-Hub</h4>
                         )}
-                        <div className="grid md:grid-cols-3 gap-2 md:gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-6">
                             <Button
                                 label="Checkin/Checkout"
                                 severity="success"
@@ -901,6 +912,15 @@ function Home() {
                                 severity="warning"
                                 onClick={() => {
                                     setActiveButton("msvi");
+                                    setShowCard(true);
+                                }}
+                                className="effected"
+                            />
+                            <Button
+                                label="Loan Equipment"
+                                severity="help"
+                                onClick={() => {
+                                    setActiveButton("loans");
                                     setShowCard(true);
                                 }}
                                 className="effected"
@@ -1930,6 +1950,31 @@ function Home() {
                                                     }
                                                 />
                                             </div>
+                                        </StepperPanel>
+                                    )}
+                                    {activeButton === "loans" && (
+                                        <StepperPanel header="CCA">
+                                            <LoanCcaStep
+                                                loan={loan}
+                                                stepperRef={stepperRef}
+                                            />
+                                        </StepperPanel>
+                                    )}
+                                    {activeButton === "loans" && (
+                                        <StepperPanel header="Equipment">
+                                            <LoanEquipmentStep
+                                                loan={loan}
+                                                stepperRef={stepperRef}
+                                            />
+                                        </StepperPanel>
+                                    )}
+                                    {activeButton === "loans" && (
+                                        <StepperPanel header="Dates">
+                                            <LoanDateStep
+                                                loan={loan}
+                                                stepperRef={stepperRef}
+                                                onDone={resetState}
+                                            />
                                         </StepperPanel>
                                     )}
                                     {activeButton === "facilities" && (
