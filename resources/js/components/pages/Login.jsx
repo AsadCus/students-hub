@@ -41,30 +41,31 @@ const Login = () => {
                 })
             );
             if (response.data.status) {
+                const { token, user } = response.data.result;
                 signIn({
-                    token: response.data.token,
-                    expiresIn: 3600,
+                    token,
+                    expiresIn: 720, // minutes; matches the API token lifetime (config/sanctum.php)
                     tokenType: "Bearer",
-                    authState: response.data.result,
+                    authState: user,
                 });
                 if (
-                    response.data.result.permissions.includes("dashboard view")
+                    user.permissions.includes("dashboard view")
                 ) {
                     navigate("/dashboard");
                 } else if (
-                    response.data.result.permissions.includes(
+                    user.permissions.includes(
                         "dashboard-checkin view"
                     )
                 ) {
                     navigate("/checkin");
                 } else if (
-                    response.data.result.permissions.includes(
+                    user.permissions.includes(
                         "dashboard-bookings view"
                     )
                 ) {
                     navigate("/facility-reservations");
                 } else if (
-                    response.data.result.permissions.includes(
+                    user.permissions.includes(
                         "dashboard-counsels view"
                     )
                 ) {
@@ -82,7 +83,8 @@ const Login = () => {
                 })
             );
             const errorMsg =
-                error.response?.data?.errors?.message?.[0] || "Login failed";
+                error.response?.data?.message ||
+                "Can't reach the server. Check your connection and try again.";
             setError(errorMsg);
         }
     };

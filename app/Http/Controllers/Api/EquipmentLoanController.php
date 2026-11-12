@@ -27,11 +27,7 @@ class EquipmentLoanController extends Controller
 
         $loan = $this->loans->create($data, EquipmentLoan::REQUESTED);
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Loan requested. A teacher will approve it.',
-            'result' => $loan->load('equipment.cca', 'student.class.level'),
-        ], Response::HTTP_CREATED);
+        return $this->ok($loan->load('equipment.cca', 'student.class.level'), 'Loan requested. A teacher will approve it.', Response::HTTP_CREATED);
     }
 
     public function confirm(int $id)
@@ -51,10 +47,7 @@ class EquipmentLoanController extends Controller
 
         if (! $request->user('sanctum')?->can('equipment_loans edit')
             && (int) $request->input('student_id') !== $loan->student_id) {
-            return response()->json([
-                'status' => false,
-                'message' => 'You can only cancel your own loan.',
-            ], Response::HTTP_FORBIDDEN);
+            return $this->fail('You can only cancel your own loan.', Response::HTTP_FORBIDDEN);
         }
 
         return $this->respond($this->loans->cancel($loan), 'Loan cancelled');
@@ -67,10 +60,6 @@ class EquipmentLoanController extends Controller
 
     private function respond(EquipmentLoan $loan, string $message)
     {
-        return response()->json([
-            'status' => true,
-            'message' => $message,
-            'result' => $loan->load('equipment.cca', 'student.class.level'),
-        ], Response::HTTP_OK);
+        return $this->ok($loan->load('equipment.cca', 'student.class.level'), $message, Response::HTTP_OK);
     }
 }

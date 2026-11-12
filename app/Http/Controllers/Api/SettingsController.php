@@ -20,10 +20,7 @@ class SettingsController extends Controller
     {
         $value = Setting::where('key', self::LOGIN_REQUIRED_KEY)->value('value');
         $enabled = filter_var($value, FILTER_VALIDATE_BOOL);
-        return response()->json([
-            'status' => true,
-            'result' => ['login_required' => $enabled],
-        ], Response::HTTP_OK);
+        return $this->ok(['login_required' => $enabled]);
     }
 
     public function setLoginRequired(Request $request)
@@ -37,10 +34,6 @@ class SettingsController extends Controller
             ['value' => $request->boolean('login_required') ? '1' : '0']
         );
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Setting updated',
-            'result' => ['login_required' => $record->value === '1'],
-        ], Response::HTTP_OK);
+        return $this->ok(['login_required' => $record->value === '1'], 'Setting updated');
     }
 }
